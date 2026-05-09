@@ -6,10 +6,15 @@ require("dotenv").config();
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL || "*", credentials: true }));
+// Updated CORS to specifically allow your Vercel frontend
+app.use(cors({ 
+  origin: ["https://campusflex.vercel.app", "http://localhost:5173"], 
+  credentials: true 
+}));
+
 app.use(express.json());
 
-// Pre-load all models
+// Pre-load all models (Using PascalCase to match your file naming)
 require("./models/User");
 require("./models/Post");
 require("./models/Story");
@@ -37,7 +42,6 @@ app.use("/api/messages",      require("./routes/messages"));
 app.use("/api/notifications", require("./routes/notifications"));
 
 app.get("/", (req, res) => res.json({ status: "CampusFlex API running 🚀" }));
-
 // Delete expired stories every hour
 cron.schedule("0 * * * *", async () => {
   try {
@@ -54,12 +58,16 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
+// Database Connection and Server Start
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
-    app.listen(process.env.PORT || 5000, () =>
-      console.log(`🚀 Server running on port ${process.env.PORT || 5000}`)
+    
+    // CRITICAL FIX FOR RENDER: Use 0.0.0.0 and dynamic port
+    const PORT = process.env.PORT || 10000;
+    app.listen(PORT, '0.0.0.0', () =>
+      console.log(`🚀 Server running on port ${PORT}`)
     );
   })
   .catch((err) => console.error("❌ DB error:", err));
