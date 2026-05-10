@@ -6,17 +6,9 @@ const Notification   = require("../models/Notification");
 const { protect, adminOnly } = require("../middleware/auth");
 const { uploadPost, uploadAvatar } = require("../middleware/cloudinary");
 
-// GET /api/users/:username — public profile
-router.get("/:username", protect, async (req, res) => {
-  try {
-    const user  = await User.findOne({ username: req.params.username }).select("-password -verificationCode -verificationExpires");
-    if (!user) return res.status(404).json({ message: "User not found" });
-    const posts = await Post.find({ author: user._id }).sort({ createdAt: -1 });
-    res.json({ user, posts });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /me routes MUST come before GET /:username to avoid conflicts
+// ─────────────────────────────────────────────────────────────────────────────
 
 // PUT /api/users/me — update profile
 router.put("/me", protect, async (req, res) => {
@@ -66,7 +58,7 @@ router.post("/me/avatar", protect, uploadAvatar.single("avatar"), async (req, re
   }
 });
 
-// POST /api/users/me/feature-request — user picks from gallery
+// POST /api/users/me/feature-request — user submits a feature request
 router.post("/me/feature-request", protect, uploadPost.single("media"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "Please select an image or video" });
@@ -89,7 +81,13 @@ router.post("/me/feature-request", protect, uploadPost.single("media"), async (r
   }
 });
 
-// GET /api/users/admin/feature-requests — admin sees pending
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN routes — MUST come before GET /:username  ← THE KEY FIX
+// Previously GET /admin/feature-requests was after GET /:username, so Express
+// treated "admin" as a username param and returned 404 every time.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /api/users/admin/feature-requests — admin sees pending requests
 router.get("/admin/feature-requests", protect, adminOnly, async (req, res) => {
   try {
     const requests = await FeatureRequest.find({ campus: req.user.campus, status: "pending" })
@@ -102,7 +100,6 @@ router.get("/admin/feature-requests", protect, adminOnly, async (req, res) => {
 });
 
 // POST /api/users/admin/feature-request/:id/approve
-// ── KEY FIX: creates a real Post so it appears on the feed ───────────────────
 router.post("/admin/feature-request/:id/approve", protect, adminOnly, async (req, res) => {
   try {
     const request = await FeatureRequest.findById(req.params.id)
@@ -115,6 +112,7 @@ router.post("/admin/feature-request/:id/approve", protect, adminOnly, async (req
       campus:    request.campus,
       mediaUrl:  request.mediaUrl,
       mediaType: request.mediaType,
+      media:     [{ url: request.mediaUrl, type: request.mediaType }],
       caption:   request.caption || `✨ Featured post by @${request.user.username}`,
       tags:      ["Featured", "CampusFlex"],
       mentions:  [],
@@ -159,6 +157,20 @@ router.post("/admin/feature-request/:id/reject", protect, adminOnly, async (req,
     });
 
     res.json({ message: "Rejected" });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /:username — public profile — MUST be LAST among GET routes
+// ─────────────────────────────────────────────────────────────────────────────
+router.get("/:username", protect, async (req, res) => {
+  try {
+    const user  = await User.findOne({ username: req.params.username }).select("-password -verificationCode -verificationExpires");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    const posts = await Post.find({ author: user._id }).sort({ createdAt: -1 });
+    res.json({ user, posts });
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }

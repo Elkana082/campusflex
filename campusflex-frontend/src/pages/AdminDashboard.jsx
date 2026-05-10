@@ -80,7 +80,6 @@ function CampusAdminManager({ campus, navigate }) {
 
   return (
     <div style={{ borderBottom: "1px solid var(--border)", paddingBottom: 14, marginBottom: 14 }}>
-      {/* Campus header — tap to expand */}
       <button
         onClick={() => setOpen(!open)}
         style={{ width: "100%", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: "6px 0", textAlign: "left" }}
@@ -100,7 +99,6 @@ function CampusAdminManager({ campus, navigate }) {
 
       {open && (
         <div style={{ marginTop: 12 }}>
-          {/* Current admins */}
           {admins.length === 0 ? (
             <div style={{ color: "var(--muted)", fontSize: 13, padding: "8px 0", textAlign: "center" }}>No admins assigned yet</div>
           ) : (
@@ -124,7 +122,6 @@ function CampusAdminManager({ campus, navigate }) {
             ))
           )}
 
-          {/* Add admin */}
           {admins.length < 4 && (
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <input
@@ -155,21 +152,80 @@ function CampusAdminManager({ campus, navigate }) {
   );
 }
 
+// ── Shared media card used for both feature requests and fit submissions ───────
+function SubmissionCard({ item, onApprove, onReject, navigate, approveLabel = "✅ Approve", rejectLabel = "✕ Reject" }) {
+  return (
+    <div style={{ marginBottom: 18, borderBottom: "1px solid var(--border)", paddingBottom: 18 }}>
+      <div
+        onClick={() => navigate(`/profile/${item.user?.username}`)}
+        style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, cursor: "pointer" }}
+      >
+        <Avatar user={item.user} size={38} navigate={navigate} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 4 }}>
+            {item.user?.username} {item.user?.verified && <VerifiedBadge size={12} />}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)" }}>
+            {item.user?.campus?.toUpperCase()} · {new Date(item.createdAt).toLocaleDateString()}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ borderRadius: 14, overflow: "hidden", aspectRatio: "1/1", background: "var(--border)", marginBottom: 10 }}>
+        {item.mediaType === "video"
+          ? <video src={item.mediaUrl} controls style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : <img src={item.mediaUrl} alt="submission" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        }
+      </div>
+
+      {item.caption && (
+        <p style={{ fontSize: 13, color: "var(--subtext)", marginBottom: 10, lineHeight: 1.5 }}>{item.caption}</p>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <button
+          onClick={() => onApprove(item._id)}
+          style={{ background: "var(--accent)", border: "none", borderRadius: 12, padding: "11px", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+        >
+          {approveLabel}
+        </button>
+        <button
+          onClick={() => onReject(item._id)}
+          style={{ background: "transparent", border: "1px solid #ef4444", borderRadius: 12, padding: "11px", color: "#ef4444", cursor: "pointer", fontWeight: 700, fontSize: 13 }}
+        >
+          {rejectLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { user, isSuperAdmin, currentCampus } = useAuth();
   const navigate        = useNavigate();
   const campus          = CAMPUSES.find((c) => c.id === currentCampus);
+
   const [featureRequests, setFeatureRequests] = useState([]);
+  const [fitSubmissions, setFitSubmissions]   = useState([]);   // ← NEW
   const [verifyUsername, setVerifyUsername]   = useState("");
   const [loadingVerify, setLoadingVerify]     = useState(false);
 
+  // ── Fetch feature requests (route was broken before — fixed in users.js) ───
   useEffect(() => {
     api.get("/users/admin/feature-requests")
       .then((r) => setFeatureRequests(r.data))
       .catch(() => {});
   }, []);
 
+  // ── Fetch fit submissions ─────────────────────────────────────────────────
+  useEffect(() => {
+    api.get("/fitrating/submissions")
+      .then((r) => setFitSubmissions(r.data))
+      .catch(() => {});
+  }, []);
+
+  // ── Feature request handlers ──────────────────────────────────────────────
   const handleApproveFeature = async (id) => {
     try {
       await api.post(`/users/admin/feature-request/${id}/approve`);
@@ -186,6 +242,24 @@ export default function AdminDashboard() {
     } catch { toast.error("Failed to reject"); }
   };
 
+  // ── Fit submission handlers ───────────────────────────────────────────────
+  const handleApproveFit = async (id) => {
+    try {
+      await api.post(`/fitrating/submissions/${id}/approve`);
+      setFitSubmissions((prev) => prev.filter((s) => s._id !== id));
+      toast.success("Outfit approved! 🔥 Now live in Fit Rating.");
+    } catch { toast.error("Failed to approve fit"); }
+  };
+
+  const handleRejectFit = async (id) => {
+    try {
+      await api.post(`/fitrating/submissions/${id}/reject`);
+      setFitSubmissions((prev) => prev.filter((s) => s._id !== id));
+      toast.success("Fit submission rejected");
+    } catch { toast.error("Failed to reject fit"); }
+  };
+
+  // ── Verification handlers ─────────────────────────────────────────────────
   const handleVerifyUser = async (revoke = false) => {
     if (!verifyUsername.trim()) return toast.error("Enter a username");
     setLoadingVerify(true);
@@ -201,6 +275,8 @@ export default function AdminDashboard() {
       setLoadingVerify(false);
     }
   };
+
+  const totalPending = featureRequests.length + fitSubmissions.length;
 
   return (
     <div className="page" style={{ paddingTop: 14 }}>
@@ -230,9 +306,9 @@ export default function AdminDashboard() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
         {[
           { label: "Feature Requests", value: featureRequests.length, color: "var(--gold)" },
-          { label: "Your Role",        value: isSuperAdmin ? "👑 Super" : "🛡️ Admin", color: "var(--accent)" },
-          { label: "Campus",           value: campus?.short || "—", color: campus?.color || "var(--pink)" },
-          { label: "Logged in as",     value: `@${user?.username}`, color: "var(--muted)" },
+          { label: "Fit Submissions",  value: fitSubmissions.length,  color: "var(--pink)" },
+          { label: "Campus",           value: campus?.short || "—",   color: campus?.color || "var(--pink)" },
+          { label: "Logged in as",     value: `@${user?.username}`,   color: "var(--muted)" },
         ].map((s) => (
           <div key={s.label} className="card" style={{ padding: "14px 15px" }}>
             <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600, marginBottom: 5 }}>{s.label}</div>
@@ -241,41 +317,57 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* ── Feature Requests ── */}
+      {/* ── Feature Requests ───────────────────────────────────────────────── */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <h3 className="syne" style={{ fontWeight: 800, marginBottom: 14, color: "var(--text)", fontSize: 15 }}>
           ⭐ Feature Requests ({featureRequests.length})
         </h3>
         {featureRequests.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "16px 0", color: "var(--muted)", fontSize: 13 }}>No pending feature requests</div>
+          <div style={{ textAlign: "center", padding: "16px 0", color: "var(--muted)", fontSize: 13 }}>
+            No pending feature requests
+          </div>
         ) : (
           featureRequests.map((r) => (
-            <div key={r._id} style={{ marginBottom: 18, borderBottom: "1px solid var(--border)", paddingBottom: 18 }}>
-              {/* Clickable user row */}
-              <div
-                onClick={() => navigate(`/profile/${r.user?.username}`)}
-                style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, cursor: "pointer" }}
-              >
-                <Avatar user={r.user} size={38} navigate={navigate} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", display: "flex", alignItems: "center", gap: 4 }}>
-                    {r.user?.username} {r.user?.verified && <VerifiedBadge size={12} />}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--muted)" }}>{r.user?.campus?.toUpperCase()} · {new Date(r.createdAt).toLocaleDateString()}</div>
-                </div>
+            <SubmissionCard
+              key={r._id}
+              item={r}
+              navigate={navigate}
+              onApprove={handleApproveFeature}
+              onReject={handleRejectFeature}
+              approveLabel="✅ Approve & Post"
+              rejectLabel="✕ Reject"
+            />
+          ))
+        )}
+      </div>
+
+      {/* ── Fit Submissions ────────────────────────────────────────────────── */}
+      <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+        <h3 className="syne" style={{ fontWeight: 800, marginBottom: 4, color: "var(--text)", fontSize: 15 }}>
+          👗 Fit Rating Submissions ({fitSubmissions.length})
+        </h3>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+          Approve outfits to make them live in the weekly Fit Rating contest.
+        </p>
+        {fitSubmissions.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "16px 0", color: "var(--muted)", fontSize: 13 }}>
+            No pending fit submissions
+          </div>
+        ) : (
+          fitSubmissions.map((s) => (
+            <div key={s._id}>
+              {/* Week badge */}
+              <div style={{ display: "inline-block", background: "var(--pink)18", border: "1px solid var(--pink)44", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "var(--pink)", fontWeight: 700, marginBottom: 10 }}>
+                Week #{s.weekNumber}
               </div>
-              {/* Media preview */}
-              <div style={{ borderRadius: 14, overflow: "hidden", aspectRatio: "1/1", background: "var(--border)", marginBottom: 10 }}>
-                {r.mediaType === "video"
-                  ? <video src={r.mediaUrl} controls style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  : <img src={r.mediaUrl} alt="request" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                }
-              </div>
-              {r.caption && <p style={{ fontSize: 13, color: "var(--subtext)", marginBottom: 10, lineHeight: 1.5 }}>{r.caption}</p>}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <button onClick={() => handleApproveFeature(r._id)} style={{ background: "var(--accent)", border: "none", borderRadius: 12, padding: "11px", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>✅ Approve</button>
-                <button onClick={() => handleRejectFeature(r._id)} style={{ background: "transparent", border: "1px solid #ef4444", borderRadius: 12, padding: "11px", color: "#ef4444", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>✕ Reject</button>
-              </div>
+              <SubmissionCard
+                item={s}
+                navigate={navigate}
+                onApprove={handleApproveFit}
+                onReject={handleRejectFit}
+                approveLabel="🔥 Approve Fit"
+                rejectLabel="✕ Reject"
+              />
             </div>
           ))
         )}

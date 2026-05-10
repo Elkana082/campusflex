@@ -5,17 +5,28 @@ const Notification = require("../models/Notification");
 const { protect, adminOnly } = require("../middleware/auth");
 const { uploadPost }         = require("../middleware/cloudinary");
 
+// Sanitise the campus query param — if the frontend sends the literal string
+// "undefined" or "null" (which happens when JS template-literals a falsy value),
+// treat it as "no filter" so we return all posts instead of zero.
+const parseCampus = (raw) =>
+  raw && raw !== "undefined" && raw !== "null" ? raw : null;
+
 // GET /api/posts?campus=maseno&page=1&limit=20
 router.get("/", protect, async (req, res) => {
   try {
-    const { campus, page = 1, limit = 20 } = req.query;
+    const campus   = parseCampus(req.query.campus);
+    const page     = Number(req.query.page)  || 1;
+    const limit    = Number(req.query.limit) || 20;
+
     const posts = await Post.find(campus ? { campus } : {})
       .populate("author", "username profilePicture verified role badges campus")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(limit);
+
     res.json(posts);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -38,23 +49,20 @@ router.post("/", protect, adminOnly, uploadPost.array("media", 4), async (req, r
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ message: "Please select at least one image or video" });
 
-    // Validate: max 1 video
     const videos = files.filter((f) => f.mimetype.startsWith("video"));
     if (videos.length > 1) return res.status(400).json({ message: "Maximum 1 video per post. You can add up to 3 images alongside it." });
     if (files.length > 4)  return res.status(400).json({ message: "Maximum 4 media items per post" });
 
     const { caption, tags, mentions } = req.body;
-
     const mediaArray = files.map((f) => ({
       url:  f.path,
       type: f.mimetype.startsWith("video") ? "video" : "image",
     }));
 
     const post = await Post.create({
-      author:   req.user._id,
-      campus:   req.user.campus,
-      media:    mediaArray,
-      // Legacy fields — set to first file for backward compat
+      author:    req.user._id,
+      campus:    req.user.campus,
+      media:     mediaArray,
       mediaUrl:  mediaArray[0].url,
       mediaType: mediaArray[0].type,
       caption:   caption  || "",
@@ -85,7 +93,7 @@ router.delete("/:id", protect, adminOnly, async (req, res) => {
 // POST /api/posts/:id/like — toggle like
 router.post("/:id/like", protect, async (req, res) => {
   try {
-    const post   = await Post.findById(req.params.id);
+    const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
     const already = post.likes.includes(req.user._id);
     if (already) {

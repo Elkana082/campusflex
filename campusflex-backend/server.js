@@ -6,15 +6,26 @@ require("dotenv").config();
 
 const app = express();
 
-// Updated CORS to specifically allow your Vercel frontend
-app.use(cors({ 
-  origin: ["https://campusflex.vercel.app", "http://localhost:5173"], 
-  credentials: true 
+// ── CORS ──────────────────────────────────────────────────────────────────────
+const allowedOrigins = [
+  "https://campusflex.vercel.app",
+  "https://campusflex-frontend.vercel.app",
+  "http://localhost:5173",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
 }));
 
 app.use(express.json());
 
-// Pre-load all models (Using PascalCase to match your file naming)
+// ── Pre-load all models ───────────────────────────────────────────────────────
 require("./models/User");
 require("./models/Post");
 require("./models/Story");
@@ -29,7 +40,7 @@ require("./models/FeatureRequest");
 require("./models/Message");
 require("./models/Notification");
 
-// Routes
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/auth",          require("./routes/auth"));
 app.use("/api/posts",         require("./routes/posts"));
 app.use("/api/stories",       require("./routes/stories"));
@@ -41,8 +52,10 @@ app.use("/api/fitrating",     require("./routes/fitrating"));
 app.use("/api/messages",      require("./routes/messages"));
 app.use("/api/notifications", require("./routes/notifications"));
 
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get("/", (req, res) => res.json({ status: "CampusFlex API running 🚀" }));
-// Delete expired stories every hour
+
+// ── Cron: delete expired stories every hour ───────────────────────────────────
 cron.schedule("0 * * * *", async () => {
   try {
     const Story         = require("./models/Story");
@@ -58,16 +71,15 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
-// Database Connection and Server Start
+// ── Connect to MongoDB then start server ──────────────────────────────────────
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
-    
-    // CRITICAL FIX FOR RENDER: Use 0.0.0.0 and dynamic port
-    const PORT = process.env.PORT || 10000;
-    app.listen(PORT, '0.0.0.0', () =>
-      console.log(`🚀 Server running on port ${PORT}`)
-    );
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
-  .catch((err) => console.error("❌ DB error:", err));
+  .catch((err) => {
+    console.error("❌ MongoDB connection failed:", err.message);
+    process.exit(1);
+  });

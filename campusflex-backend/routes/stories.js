@@ -3,22 +3,27 @@ const Story         = require("../models/Story");
 const StoryReaction = require("../models/StoryReaction");
 const Notification  = require("../models/Notification");
 const { protect, adminOnly } = require("../middleware/auth");
-const { uploadStory }      = require("../middleware/cloudinary");
+const { uploadStory }        = require("../middleware/cloudinary");
+
+// Sanitise the campus query param — treat "undefined" / "null" strings as
+// no filter so new users always see stories even before AuthContext hydrates.
+const parseCampus = (raw) =>
+  raw && raw !== "undefined" && raw !== "null" ? raw : null;
 
 // GET /api/stories?campus=maseno
 router.get("/", protect, async (req, res) => {
   try {
-    const { campus } = req.query;
-    const filter     = { expiresAt: { $gt: new Date() }, ...(campus && { campus }) };
-    const stories    = await Story.find(filter)
+    const campus = parseCampus(req.query.campus);
+    const filter = { expiresAt: { $gt: new Date() }, ...(campus && { campus }) };
+
+    const stories = await Story.find(filter)
       .populate("author", "username profilePicture verified role")
       .sort({ createdAt: -1 });
 
-    // Attach like count + whether current user liked each story
     const withMeta = await Promise.all(stories.map(async (story) => {
-      const likes    = await StoryReaction.countDocuments({ story: story._id, type: "like" });
+      const likes     = await StoryReaction.countDocuments({ story: story._id, type: "like" });
       const userLiked = await StoryReaction.findOne({ story: story._id, user: req.user._id, type: "like" });
-      const replies  = await StoryReaction.find({ story: story._id, type: "reply" })
+      const replies   = await StoryReaction.find({ story: story._id, type: "reply" })
         .populate("user", "username profilePicture verified")
         .sort({ createdAt: -1 })
         .limit(20);
@@ -64,7 +69,7 @@ router.delete("/:id", protect, adminOnly, async (req, res) => {
 // POST /api/stories/:id/like — toggle like on a story
 router.post("/:id/like", protect, async (req, res) => {
   try {
-    const story   = await Story.findById(req.params.id);
+    const story = await Story.findById(req.params.id);
     if (!story) return res.status(404).json({ message: "Story not found" });
 
     const existing = await StoryReaction.findOne({ story: req.params.id, user: req.user._id, type: "like" });
@@ -73,7 +78,6 @@ router.post("/:id/like", protect, async (req, res) => {
       await existing.deleteOne();
     } else {
       await StoryReaction.create({ story: req.params.id, user: req.user._id, type: "like" });
-      // Notify story author if not liking own story
       if (story.author.toString() !== req.user._id.toString()) {
         await Notification.create({
           recipient: story.author,
@@ -108,7 +112,6 @@ router.post("/:id/reply", protect, async (req, res) => {
     });
     await reply.populate("user", "username profilePicture verified");
 
-    // Notify story author
     if (story.author.toString() !== req.user._id.toString()) {
       await Notification.create({
         recipient: story.author,
