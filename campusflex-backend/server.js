@@ -7,18 +7,23 @@ require("dotenv").config();
 const app = express();
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
-const allowedOrigins = [
-  "https://campusflex.vercel.app",
-  "https://campusflex-frontend.vercel.app",
-  "http://localhost:5173",
-  process.env.FRONTEND_URL,
-].filter(Boolean);
-
+// Vercel generates a unique preview URL for every deploy (e.g.
+// campusflex-2mhlshzf3-xxx.vercel.app) so we can't hardcode them all.
+// Instead we allow: localhost dev, any *.vercel.app subdomain, and any
+// custom domain stored in FRONTEND_URL.
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, curl)
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error("Not allowed by CORS"));
+    // Requests with no origin (Postman, mobile apps, curl) — always allow
+    if (!origin) return callback(null, true);
+
+    const allowed =
+      origin === "http://localhost:5173"          ||
+      origin === "http://localhost:3000"          ||
+      origin.endsWith(".vercel.app")              ||   // ← covers ALL preview URLs
+      (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL);
+
+    if (allowed) return callback(null, true);
+    return callback(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true,
 }));
