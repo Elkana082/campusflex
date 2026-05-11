@@ -9,14 +9,11 @@
     {
       "source": "/robots.txt",
       "headers": [
-        { "key": "Content-Type", "value": "text/plain" }
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" }
       ]
     }
   ],
   "rewrites": [
-    {
-      "source": "/((?!sitemap.xml|robots.txt).*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

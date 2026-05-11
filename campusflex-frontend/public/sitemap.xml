@@ -1,74 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-
-  <!-- Home / Feed -->
   <url>
     <loc>https://campusflex.vercel.app/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
-
-  <!-- Auth -->
   <url>
     <loc>https://campusflex.vercel.app/login</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-
-  <!-- Events -->
   <url>
     <loc>https://campusflex.vercel.app/events</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
-
-  <!-- News -->
   <url>
     <loc>https://campusflex.vercel.app/news</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
-
-  <!-- Shoutout Wall -->
   <url>
     <loc>https://campusflex.vercel.app/wall</loc>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
-
-  <!-- Fit Rating -->
   <url>
     <loc>https://campusflex.vercel.app/fitrating</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
-
-  <!-- Messages / Inbox -->
   <url>
     <loc>https://campusflex.vercel.app/messages</loc>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
   </url>
-
-  <!-- Notifications -->
   <url>
     <loc>https://campusflex.vercel.app/notifications</loc>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
   </url>
-
-  <!-- Settings -->
   <url>
     <loc>https://campusflex.vercel.app/settings</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
-
-  <!-- Admin Dashboard -->
   <url>
     <loc>https://campusflex.vercel.app/admin</loc>
     <changefreq>daily</changefreq>
     <priority>0.6</priority>
   </url>
-
 </urlset>
