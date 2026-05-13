@@ -1,8 +1,8 @@
-const router       = require("express").Router();
-const Message      = require("../models/Message");
-const User         = require("../models/User");
+const router  = require("express").Router();
+const Message = require("../models/Message");
+const User    = require("../models/User");
 const Notification = require("../models/Notification");
-const { protect }  = require("../middleware/auth");
+const { protect } = require("../middleware/auth");
 
 // 1. GET /api/messages/conversations — Inbox view
 router.get("/conversations", protect, async (req, res) => {
@@ -10,33 +10,23 @@ router.get("/conversations", protect, async (req, res) => {
     const messages = await Message.find({
       $or: [{ sender: req.user._id }, { recipient: req.user._id }],
     })
-      .populate("sender", "username profilePicture verified")
+      .populate("sender",    "username profilePicture verified")
       .populate("recipient", "username profilePicture verified")
       .sort({ createdAt: -1 });
 
-    const seen = new Set();
+    const seen   = new Set();
     const convos = [];
-
     for (const msg of messages) {
       if (!msg.sender || !msg.recipient) continue;
-
-      const other = msg.sender._id.toString() === req.user._id.toString()
-        ? msg.recipient
-        : msg.sender;
-
+      const other = msg.sender._id.toString() === req.user._id.toString() ? msg.recipient : msg.sender;
       if (!seen.has(other._id.toString())) {
         seen.add(other._id.toString());
-        const unread = await Message.countDocuments({
-          sender: other._id, recipient: req.user._id, read: false,
-        });
-        // Matches the "otherUser" and "unreadCount" frontend logic
+        const unread = await Message.countDocuments({ sender: other._id, recipient: req.user._id, read: false });
         convos.push({ otherUser: other, lastMessage: msg, unreadCount: unread });
       }
     }
     res.json(convos);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
 // 2. GET /api/messages/history/:userId — Load one-on-one chat
@@ -44,58 +34,37 @@ router.get("/history/:userId", protect, async (req, res) => {
   try {
     const messages = await Message.find({
       $or: [
-        { sender: req.user._id, recipient: req.params.userId },
-        { sender: req.params.userId, recipient: req.user._id },
+        { sender: req.user._id,       recipient: req.params.userId },
+        { sender: req.params.userId,  recipient: req.user._id },
       ],
     })
       .populate("sender", "username profilePicture verified")
       .sort({ createdAt: 1 });
-
     res.json(messages);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// 3. POST /api/messages/send — Fixes the "Sending Failed" error
+// 3. POST /api/messages/send
 router.post("/send", protect, async (req, res) => {
   try {
     const { recipientId, text } = req.body;
     if (!text?.trim()) return res.status(400).json({ message: "Empty message" });
-
-    const message = await Message.create({
-      sender: req.user._id,
-      recipient: recipientId,
-      text: text.trim(),
-    });
-
-    const populated = await Message.findById(message._id)
-      .populate("sender", "username profilePicture verified");
-
-    // Notification Logic
+    const message   = await Message.create({ sender: req.user._id, recipient: recipientId, text: text.trim() });
+    const populated = await Message.findById(message._id).populate("sender", "username profilePicture verified");
     await Notification.create({
-      recipient: recipientId,
-      sender: req.user._id,
-      type: "message",
+      recipient: recipientId, sender: req.user._id, type: "message",
       text: `@${req.user.username} sent you a message`,
-    }).catch(() => {}); // Silent catch to prevent crash if notification fails
-
+    }).catch(() => {});
     res.status(201).json(populated);
-  } catch (err) {
-    res.status(500).json({ message: "Send failed" });
-  }
+  } catch (err) { res.status(500).json({ message: "Send failed" }); }
 });
+
 // 4. POST /api/messages/read/:userId — Mark as read
 router.post("/read/:userId", protect, async (req, res) => {
   try {
-    await Message.updateMany(
-      { sender: req.params.userId, recipient: req.user._id, read: false },
-      { read: true }
-    );
+    await Message.updateMany({ sender: req.params.userId, recipient: req.user._id, read: false }, { read: true });
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: "Update failed" });
-  }
+  } catch (err) { res.status(500).json({ message: "Update failed" }); }
 });
 
 // 5. DELETE /api/messages/conversation/:userId — Delete specific chat
@@ -103,26 +72,20 @@ router.delete("/conversation/:userId", protect, async (req, res) => {
   try {
     await Message.deleteMany({
       $or: [
-        { sender: req.user._id, recipient: req.params.userId },
-        { sender: req.params.userId, recipient: req.user._id }
-      ]
+        { sender: req.user._id,      recipient: req.params.userId },
+        { sender: req.params.userId, recipient: req.user._id },
+      ],
     });
     res.json({ message: "Conversation deleted" });
-  } catch (err) {
-    res.status(500).json({ message: "Delete failed" });
-  }
+  } catch (err) { res.status(500).json({ message: "Delete failed" }); }
 });
 
 // 6. DELETE /api/messages/inbox/clear — Clear entire inbox
 router.delete("/inbox/clear", protect, async (req, res) => {
   try {
-    await Message.deleteMany({
-      $or: [{ sender: req.user._id }, { recipient: req.user._id }]
-    });
+    await Message.deleteMany({ $or: [{ sender: req.user._id }, { recipient: req.user._id }] });
     res.json({ message: "Inbox cleared" });
-  } catch (err) {
-    res.status(500).json({ message: "Clear failed" });
-  }
+  } catch (err) { res.status(500).json({ message: "Clear failed" }); }
 });
 
 // 7. GET /api/messages/unread/count — Nav badge count
@@ -130,9 +93,25 @@ router.get("/unread/count", protect, async (req, res) => {
   try {
     const count = await Message.countDocuments({ recipient: req.user._id, read: false });
     res.json({ count });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
+});
+
+// 8. DELETE /api/messages/:messageId — Delete a single message (own or admin)
+// ── Must come AFTER all /inbox, /unread, /conversation routes to avoid conflicts
+router.delete("/:messageId", protect, async (req, res) => {
+  try {
+    const message = await Message.findById(req.params.messageId);
+    if (!message) return res.status(404).json({ message: "Message not found" });
+
+    const isSender = message.sender.toString() === req.user._id.toString();
+    const isAdmin  = req.user.role === "admin" || req.user.role === "superadmin";
+
+    if (!isSender && !isAdmin)
+      return res.status(403).json({ message: "You can only delete your own messages" });
+
+    await message.deleteOne();
+    res.json({ message: "Deleted" });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
 module.exports = router;

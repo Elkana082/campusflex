@@ -6,11 +6,8 @@ const Notification   = require("../models/Notification");
 const { protect, adminOnly } = require("../middleware/auth");
 const { uploadPost, uploadAvatar } = require("../middleware/cloudinary");
 
-// ─────────────────────────────────────────────────────────────────────────────
-// PUT /me routes MUST come before GET /:username to avoid conflicts
-// ─────────────────────────────────────────────────────────────────────────────
+// ── /me routes MUST come before /:username ────────────────────────────────────
 
-// PUT /api/users/me — update profile
 router.put("/me", protect, async (req, res) => {
   try {
     const allowed = ["displayName", "bio", "socials", "username"];
@@ -23,12 +20,9 @@ router.put("/me", protect, async (req, res) => {
     }
     const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true }).select("-password");
     res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// PUT /api/users/me/password
 router.put("/me/password", protect, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -40,12 +34,9 @@ router.put("/me/password", protect, async (req, res) => {
     user.password = newPassword;
     await user.save();
     res.json({ message: "Password updated" });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// POST /api/users/me/avatar
 router.post("/me/avatar", protect, uploadAvatar.single("avatar"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "Image required" });
@@ -53,23 +44,35 @@ router.post("/me/avatar", protect, uploadAvatar.single("avatar"), async (req, re
       req.user._id, { profilePicture: req.file.path }, { new: true }
     ).select("-password");
     res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// POST /api/users/me/feature-request — user submits a feature request
-router.post("/me/feature-request", protect, uploadPost.single("media"), async (req, res) => {
+// POST /api/users/me/feature-request — supports up to 4 files
+router.post("/me/feature-request", protect, uploadPost.array("media", 4), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "Please select an image or video" });
+    const files = req.files || [];
+    if (!files.length)
+      return res.status(400).json({ message: "Please select at least one image or video" });
+
+    const videos = files.filter((f) => f.mimetype.startsWith("video"));
+    if (videos.length > 1)
+      return res.status(400).json({ message: "Maximum 1 video. Add up to 3 images alongside it." });
+
     const existing = await FeatureRequest.findOne({ user: req.user._id, status: "pending" });
     if (existing)
       return res.status(400).json({ message: "You already have a pending request. Wait for admin to review it." });
+
+    const mediaArray = files.map((f) => ({
+      url:  f.path,
+      type: f.mimetype.startsWith("video") ? "video" : "image",
+    }));
+
     const request = await FeatureRequest.create({
       user:      req.user._id,
       campus:    req.user.campus,
-      mediaUrl:  req.file.path,
-      mediaType: req.file.mimetype.startsWith("video") ? "video" : "image",
+      mediaUrl:  mediaArray[0].url,
+      mediaType: mediaArray[0].type,
+      media:     mediaArray,
       caption:   req.body.caption || "",
       status:    "pending",
     });
@@ -81,53 +84,41 @@ router.post("/me/feature-request", protect, uploadPost.single("media"), async (r
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ADMIN routes — MUST come before GET /:username  ← THE KEY FIX
-// Previously GET /admin/feature-requests was after GET /:username, so Express
-// treated "admin" as a username param and returned 404 every time.
-// ─────────────────────────────────────────────────────────────────────────────
+// ── /admin routes MUST come before /:username ─────────────────────────────────
 
-// GET /api/users/admin/feature-requests — admin sees pending requests
 router.get("/admin/feature-requests", protect, adminOnly, async (req, res) => {
   try {
     const requests = await FeatureRequest.find({ campus: req.user.campus, status: "pending" })
       .populate("user", "username profilePicture verified campus")
       .sort({ createdAt: -1 });
     res.json(requests);
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// POST /api/users/admin/feature-request/:id/approve
 router.post("/admin/feature-request/:id/approve", protect, adminOnly, async (req, res) => {
   try {
     const request = await FeatureRequest.findById(req.params.id)
       .populate("user", "_id username profilePicture verified campus");
     if (!request) return res.status(404).json({ message: "Request not found" });
 
-    // 1. Create a real Post on the campus feed
+    const media = request.media?.length
+      ? request.media
+      : [{ url: request.mediaUrl, type: request.mediaType }];
+
     const post = await Post.create({
       author:    request.user._id,
       campus:    request.campus,
-      mediaUrl:  request.mediaUrl,
-      mediaType: request.mediaType,
-      media:     [{ url: request.mediaUrl, type: request.mediaType }],
+      mediaUrl:  media[0].url,
+      mediaType: media[0].type,
+      media,
       caption:   request.caption || `✨ Featured post by @${request.user.username}`,
       tags:      ["Featured", "CampusFlex"],
       mentions:  [],
       featured:  true,
     });
 
-    // 2. Mark request approved
     await FeatureRequest.findByIdAndUpdate(req.params.id, { status: "approved" });
-
-    // 3. Award badge
-    await User.findByIdAndUpdate(request.user._id, {
-      $addToSet: { badges: "✨ Featured Creator" },
-    });
-
-    // 4. Notify the user
+    await User.findByIdAndUpdate(request.user._id, { $addToSet: { badges: "✨ Featured Creator" } });
     await Notification.create({
       recipient: request.user._id,
       type:      "feature_approved",
@@ -142,7 +133,6 @@ router.post("/admin/feature-request/:id/approve", protect, adminOnly, async (req
   }
 });
 
-// POST /api/users/admin/feature-request/:id/reject
 router.post("/admin/feature-request/:id/reject", protect, adminOnly, async (req, res) => {
   try {
     const request = await FeatureRequest.findByIdAndUpdate(
@@ -155,25 +145,18 @@ router.post("/admin/feature-request/:id/reject", protect, adminOnly, async (req,
       type:      "feature_rejected",
       text:      "Your feature request was reviewed but not approved this time. Keep posting! 💜",
     });
-
     res.json({ message: "Rejected" });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /:username — public profile — MUST be LAST among GET routes
-// ─────────────────────────────────────────────────────────────────────────────
+// ── GET /:username — MUST be last ─────────────────────────────────────────────
 router.get("/:username", protect, async (req, res) => {
   try {
     const user  = await User.findOne({ username: req.params.username }).select("-password -verificationCode -verificationExpires");
     if (!user) return res.status(404).json({ message: "User not found" });
     const posts = await Post.find({ author: user._id }).sort({ createdAt: -1 });
     res.json({ user, posts });
-  } catch (err) {
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
 module.exports = router;

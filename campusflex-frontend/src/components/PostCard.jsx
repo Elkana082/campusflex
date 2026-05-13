@@ -6,14 +6,12 @@ import VerifiedBadge from "./VerifiedBadge";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 
-// ── TikTok-style video — autoplay on scroll, restart on re-entry ──────────────
+// ── Video player — autoplay on scroll, capped height, no black receipt bars ──
 function VideoPlayer({ src }) {
   const videoRef = useRef(null);
-
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
@@ -26,17 +24,13 @@ function VideoPlayer({ src }) {
       },
       { threshold: 0.5 }
     );
-
     observer.observe(video);
     return () => observer.disconnect();
   }, [src]);
-
-  // Also pause when navigating away
   useEffect(() => {
     const video = videoRef.current;
     return () => { if (video) { video.pause(); video.currentTime = 0; } };
   }, []);
-
   return (
     <video
       ref={videoRef}
@@ -45,16 +39,21 @@ function VideoPlayer({ src }) {
       playsInline
       loop={false}
       controls
-      style={{ width: "100%", display: "block", background: "#000", maxHeight: "80vh" }}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",   // ← fills frame, no black bars
+        display: "block",
+        background: "#000",
+      }}
     />
   );
 }
 
-// ── Media Carousel — swipeable, dot indicators ────────────────────────────────
+// ── Media Carousel — square crop, swipeable, dot indicators ──────────────────
 function MediaCarousel({ mediaItems }) {
-  const [current, setCurrent]   = useState(0);
-  const startXRef               = useRef(null);
-  const containerRef            = useRef(null);
+  const [current, setCurrent] = useState(0);
+  const startXRef             = useRef(null);
 
   const next = useCallback(() => setCurrent((c) => Math.min(c + 1, mediaItems.length - 1)), [mediaItems.length]);
   const prev = useCallback(() => setCurrent((c) => Math.max(c - 1, 0)), []);
@@ -69,10 +68,9 @@ function MediaCarousel({ mediaItems }) {
   };
 
   return (
-    <div style={{ position: "relative", background: "#000", overflow: "hidden", lineHeight: 0 }}>
+    <div style={{ position: "relative", background: "#000", overflow: "hidden" }}>
       {/* Slide track */}
       <div
-        ref={containerRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         style={{
@@ -82,75 +80,55 @@ function MediaCarousel({ mediaItems }) {
         }}
       >
         {mediaItems.map((item, i) => (
-          <div key={i} style={{ minWidth: "100%", flexShrink: 0 }}>
+          <div
+            key={i}
+            style={{
+              minWidth: "100%",
+              flexShrink: 0,
+              // ── THE FIX: square frame, objectFit:cover crops excess ──────
+              aspectRatio: "1 / 1",
+              maxHeight: 480,
+              overflow: "hidden",
+              background: "#000",
+            }}
+          >
             {item.type === "video"
               ? <VideoPlayer src={item.url} />
               : <img
                   src={item.url}
                   alt={`media-${i}`}
-                  style={{ width: "100%", height: "auto", display: "block" }}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",   // ← crops to square, no empty space
+                    display: "block",
+                  }}
                 />
             }
           </div>
         ))}
       </div>
 
-      {/* Left / Right arrows — only if multiple items */}
+      {/* Arrows */}
       {mediaItems.length > 1 && current > 0 && (
-        <button
-          onClick={prev}
-          style={{
-            position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)",
-            background: "#00000077", border: "none", borderRadius: "50%",
-            width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            backdropFilter: "blur(4px)", zIndex: 2,
-          }}
-        >‹</button>
+        <button onClick={prev} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
       )}
       {mediaItems.length > 1 && current < mediaItems.length - 1 && (
-        <button
-          onClick={next}
-          style={{
-            position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)",
-            background: "#00000077", border: "none", borderRadius: "50%",
-            width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            backdropFilter: "blur(4px)", zIndex: 2,
-          }}
-        >›</button>
+        <button onClick={next} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
       )}
 
-      {/* Position counter top-right */}
+      {/* Counter */}
       {mediaItems.length > 1 && (
-        <div style={{
-          position: "absolute", top: 10, right: 12,
-          background: "#00000077", borderRadius: 20,
-          padding: "3px 9px", fontSize: 11, color: "#fff",
-          fontWeight: 700, backdropFilter: "blur(4px)", zIndex: 2,
-        }}>
+        <div style={{ position: "absolute", top: 10, right: 12, background: "#00000077", borderRadius: 20, padding: "3px 9px", fontSize: 11, color: "#fff", fontWeight: 700, backdropFilter: "blur(4px)", zIndex: 2 }}>
           {current + 1}/{mediaItems.length}
         </div>
       )}
 
-      {/* Dot indicators */}
+      {/* Dots */}
       {mediaItems.length > 1 && (
-        <div style={{
-          position: "absolute", bottom: 10, left: 0, right: 0,
-          display: "flex", justifyContent: "center", gap: 5, zIndex: 2,
-        }}>
+        <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 2 }}>
           {mediaItems.map((_, i) => (
-            <div
-              key={i}
-              onClick={() => setCurrent(i)}
-              style={{
-                width: i === current ? 16 : 6,
-                height: 6, borderRadius: 3,
-                background: i === current ? "#fff" : "#ffffff66",
-                cursor: "pointer",
-                transition: "width 0.2s, background 0.2s",
-              }}
-            />
+            <div key={i} onClick={() => setCurrent(i)} style={{ width: i === current ? 16 : 6, height: 6, borderRadius: 3, background: i === current ? "#fff" : "#ffffff66", cursor: "pointer", transition: "width 0.2s, background 0.2s" }} />
           ))}
         </div>
       )}
@@ -175,19 +153,17 @@ function ShareModal({ post, author, onClose }) {
 
   const handleNativeShare = async () => {
     if (!navigator.share) { await navigator.clipboard.writeText(text); toast.success("Copied!"); onClose(); return; }
-    try {
-      await navigator.share({ title: "CampusFlex", text, url });
-      onClose();
-    } catch (err) { if (err.name !== "AbortError") toast.error("Share cancelled"); }
+    try { await navigator.share({ title: "CampusFlex", text, url }); onClose(); }
+    catch (err) { if (err.name !== "AbortError") toast.error("Share cancelled"); }
   };
 
   const handleSave = async () => {
     const firstMedia = post.media?.[0] || { url: post.mediaUrl, type: post.mediaType };
     try {
-      const res = await fetch(firstMedia.url);
+      const res  = await fetch(firstMedia.url);
       const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = URL.createObjectURL(blob);
       a.download = `campusflex-${post._id}.${firstMedia.type === "video" ? "mp4" : "jpg"}`;
       a.click();
       onClose();
@@ -203,7 +179,9 @@ function ShareModal({ post, author, onClose }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 14 }}>
           {apps.map((app) => (
             <button key={app.name} onClick={app.action} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7 }}>
-              {app.icon ? <img src={app.icon} alt={app.name} style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 8 }} /> : <div style={{ width: 32, height: 32, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{app.emoji}</div>}
+              {app.icon
+                ? <img src={app.icon} alt={app.name} style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 8 }} />
+                : <div style={{ width: 32, height: 32, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{app.emoji}</div>}
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>{app.name}</span>
             </button>
           ))}
@@ -235,7 +213,6 @@ export default function PostCard({ post, onDelete }) {
 
   const author = post.author || {};
 
-  // Normalize media: new posts have media[], old posts have mediaUrl/mediaType
   const mediaItems = post.media?.length
     ? post.media
     : post.mediaUrl
@@ -297,18 +274,12 @@ export default function PostCard({ post, onDelete }) {
     <>
       <div className="card" style={{ marginBottom: 18, overflow: "hidden" }}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px" }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
             <div
               onClick={() => goTo(author.username)}
-              style={{
-                width: 42, height: 42, borderRadius: "50%", cursor: "pointer",
-                background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)",
-                border: "2px solid var(--border)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne",
-              }}
+              style={{ width: 42, height: 42, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}
             >
               {!author.profilePicture && author.username?.[0]?.toUpperCase()}
             </div>
@@ -318,12 +289,9 @@ export default function PostCard({ post, onDelete }) {
               </div>
             )}
           </div>
-
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <span onClick={() => goTo(author.username)} className="syne" style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", cursor: "pointer" }}>
-                {author.username}
-              </span>
+              <span onClick={() => goTo(author.username)} className="syne" style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", cursor: "pointer" }}>{author.username}</span>
               {author.verified && <VerifiedBadge size={14} />}
               {(author.role === "admin" || author.role === "superadmin") && (
                 <span style={{ background: "#ec489918", color: "var(--pink)", border: "1px solid #ec489933", borderRadius: 20, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>Admin</span>
@@ -333,7 +301,6 @@ export default function PostCard({ post, onDelete }) {
               {new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
-
           {isAdmin && (
             <button onClick={handleDelete} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round">
@@ -344,35 +311,30 @@ export default function PostCard({ post, onDelete }) {
           )}
         </div>
 
-        {/* ── Media carousel (1–4 items, TikTok video) ── */}
+        {/* Media */}
         {mediaItems.length > 0 && <MediaCarousel mediaItems={mediaItems} />}
 
-        {/* ── Actions ── */}
+        {/* Actions */}
         <div style={{ padding: "12px 15px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10 }}>
-
             <button onClick={handleLike} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: liked ? "var(--pink)" : "var(--muted)", fontSize: 13, fontWeight: 700 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill={liked ? "var(--pink)" : "none"} stroke={liked ? "var(--pink)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
               </svg>
               {likeCount.toLocaleString()}
             </button>
-
             <button onClick={handleToggleComments} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: showComments ? "var(--accent)" : "var(--muted)", fontSize: 13, fontWeight: 700 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showComments ? "var(--accent)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
               </svg>
               {loadingComments ? "..." : commentCount.toLocaleString()}
             </button>
-
             <div style={{ flex: 1 }} />
-
             <button onClick={() => setSaved(!saved)} style={{ background: "none", border: "none", cursor: "pointer" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "var(--gold)" : "none"} stroke={saved ? "var(--gold)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
               </svg>
             </button>
-
             <button onClick={() => setShowShare(true)} style={{ background: "none", border: "none", cursor: "pointer" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -388,13 +350,11 @@ export default function PostCard({ post, onDelete }) {
               <span style={{ color: "var(--subtext)" }}>{post.caption}</span>
             </p>
           )}
-
           {post.tags?.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>
               {post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}
             </div>
           )}
-
           {post.mentions?.length > 0 && (
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
               {post.mentions.map((m) => (
@@ -413,23 +373,16 @@ export default function PostCard({ post, onDelete }) {
                 const canDelete = cm.author?._id === user?._id || isAdmin;
                 return (
                   <div key={cm._id} style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "flex-start" }}>
-                    <div
-                      onClick={() => goTo(cm.author?.username)}
-                      style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "pointer", background: cm.author?.profilePicture ? `url(${cm.author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}
-                    >
+                    <div onClick={() => goTo(cm.author?.username)} style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "pointer", background: cm.author?.profilePicture ? `url(${cm.author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
                       {!cm.author?.profilePicture && cm.author?.username?.[0]?.toUpperCase()}
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "8px 13px", fontSize: 13 }}>
-                        <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 6, cursor: "pointer" }}>
-                          {cm.author?.username}
-                        </span>
+                        <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 6, cursor: "pointer" }}>{cm.author?.username}</span>
                         <span style={{ color: "var(--subtext)" }}>{cm.text}</span>
                       </div>
                       {canDelete && (
-                        <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>
-                          Delete
-                        </button>
+                        <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>
                       )}
                     </div>
                   </div>
@@ -446,7 +399,6 @@ export default function PostCard({ post, onDelete }) {
           )}
         </div>
       </div>
-
       {showShare && <ShareModal post={post} author={author} onClose={() => setShowShare(false)} />}
     </>
   );

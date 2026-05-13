@@ -11,11 +11,16 @@ const getWeekNumber = () => {
   return Math.ceil(((now - start) / 86400000 + start.getDay() + 1) / 7);
 };
 
-// GET /api/fitrating?campus=unilag — approved fits this week
+// Sanitise campus param
+const parseCampus = (raw) =>
+  raw && raw !== "undefined" && raw !== "null" ? raw : null;
+
+// GET /api/fitrating?campus=maseno — approved fits this week
 router.get("/", protect, async (req, res) => {
   try {
     const week   = getWeekNumber();
-    const filter = { weekNumber: week, ...(req.query.campus && { campus: req.query.campus }) };
+    const campus = parseCampus(req.query.campus);
+    const filter = { weekNumber: week, ...(campus && { campus }) };
     const ratings = await FitRating.find(filter)
       .populate({ path: "post", populate: { path: "author", select: "username profilePicture verified campus" } })
       .sort({ createdAt: -1 });
@@ -43,18 +48,35 @@ router.get("/submissions", protect, adminOnly, async (req, res) => {
   }
 });
 
-// POST /api/fitrating/submit — user picks outfit from gallery
-router.post("/submit", protect, uploadPost.single("media"), async (req, res) => {
+// POST /api/fitrating/submit — user submits outfit (up to 4 files)
+router.post("/submit", protect, uploadPost.array("media", 4), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "Please select a photo or video of your outfit" });
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ message: "Please select a photo or video of your outfit" });
+
+    // Max 1 video
+    const videos = files.filter((f) => f.mimetype.startsWith("video"));
+    if (videos.length > 1) return res.status(400).json({ message: "Maximum 1 video. Add up to 3 images alongside it." });
+
     const week = getWeekNumber();
-    const existing = await FitSubmission.findOne({ user: req.user._id, weekNumber: week, status: { $in: ["pending", "approved"] } });
+    const existing = await FitSubmission.findOne({
+      user:       req.user._id,
+      weekNumber: week,
+      status:     { $in: ["pending", "approved"] },
+    });
     if (existing) return res.status(400).json({ message: "You already submitted an outfit this week!" });
+
+    const mediaArray = files.map((f) => ({
+      url:  f.path,
+      type: f.mimetype.startsWith("video") ? "video" : "image",
+    }));
+
     const submission = await FitSubmission.create({
       user:       req.user._id,
       campus:     req.user.campus,
-      mediaUrl:   req.file.path,
-      mediaType:  req.file.mimetype.startsWith("video") ? "video" : "image",
+      mediaUrl:   mediaArray[0].url,   // backward compat
+      mediaType:  mediaArray[0].type,
+      media:      mediaArray,          // full array
       caption:    req.body.caption || "",
       weekNumber: week,
       status:     "pending",
@@ -72,22 +94,31 @@ router.post("/submissions/:id/approve", protect, adminOnly, async (req, res) => 
   try {
     const submission = await FitSubmission.findById(req.params.id).populate("user");
     if (!submission) return res.status(404).json({ message: "Submission not found" });
-    const week = getWeekNumber();
+
+    const week  = getWeekNumber();
+    const media = submission.media?.length
+      ? submission.media
+      : [{ url: submission.mediaUrl, type: submission.mediaType }];
+
     const post = await Post.create({
       author:    submission.user._id,
       campus:    submission.campus,
-      mediaUrl:  submission.mediaUrl,
-      mediaType: submission.mediaType,
+      mediaUrl:  media[0].url,
+      mediaType: media[0].type,
+      media,
       caption:   submission.caption || "",
       tags:      ["FitCheck", "CampusFlex"],
       mentions:  [],
     });
+
     const fitRating = await FitRating.create({
       post: post._id, campus: submission.campus, weekNumber: week, ratings: [],
     });
+
     submission.status      = "approved";
     submission.fitRatingId = fitRating._id;
     await submission.save();
+
     res.json({ message: `✅ Outfit by @${submission.user.username} is now live!`, fitRating });
   } catch (err) {
     console.error(err);

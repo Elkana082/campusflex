@@ -20,7 +20,10 @@ import FeatureRequest from "./pages/FeatureRequest";
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "var(--muted)", fontFamily: "Syne", fontWeight: 700, fontSize: 18 }}>
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "center",
+      height: "100dvh", color: "var(--muted)", fontFamily: "Syne", fontWeight: 700, fontSize: 18,
+    }}>
       CampusFlex...
     </div>
   );
@@ -36,37 +39,69 @@ export default function App() {
   const { user } = useAuth();
 
   return (
-    <>
+    /*
+     * ── Layout wrapper ───────────────────────────────────────────────────────
+     * • maxWidth 480px centers the app on tablets/desktops like a phone frame
+     * • margin: 0 auto centers it horizontally
+     * • minHeight 100dvh fills the full visible viewport (accounts for mobile
+     *   browser chrome shrinking/growing)
+     * • background covers the whole column so no white gaps on tall screens
+     */
+    <div style={{
+      maxWidth: 480,
+      margin: "0 auto",
+      minHeight: "100dvh",
+      background: "var(--bg)",
+      position: "relative",
+      // Soft border on wide screens so the column is visible
+      boxShadow: "0 0 0 1px var(--border)",
+    }}>
+
+      {/* Sticky top nav — stays at top of this column, not the whole viewport */}
       {user && <Navbar />}
 
-      <Routes>
-        {/* Public */}
-        <Route path="/signup" element={!user ? <Signup />        : <Navigate to="/" replace />} />
-        <Route path="/login"  element={!user ? <Login />         : <Navigate to="/" replace />} />
+      {/*
+       * ── Main content area ─────────────────────────────────────────────────
+       * paddingBottom clears the fixed BottomNav (≈65px) + iPhone home
+       * indicator (env safe area). Without this, the last card on every page
+       * is hidden behind the bottom bar.
+       */}
+      <main style={{
+        paddingBottom: user ? "calc(68px + env(safe-area-inset-bottom))" : 0,
+        minHeight: "calc(100dvh - 52px)", // fill below the top nav
+        boxSizing: "border-box",
+      }}>
+        <Routes>
+          {/* Public */}
+          <Route path="/signup" element={!user ? <Signup />  : <Navigate to="/" replace />} />
+          <Route path="/login"  element={!user ? <Login />   : <Navigate to="/" replace />} />
 
-        {/* Protected */}
-        <Route path="/"                  element={<Protected><Home /></Protected>} />
-        <Route path="/explore"           element={<Protected><Explore /></Protected>} />
-        <Route path="/events"            element={<Protected><Events /></Protected>} />
-        <Route path="/news"              element={<Protected><News /></Protected>} />
-        <Route path="/fit"               element={<Protected><FitRating /></Protected>} />
-        <Route path="/wall"              element={<Protected><Shoutouts /></Protected>} />
-        <Route path="/profile"           element={<Protected><Profile /></Protected>} />
-        <Route path="/profile/:username" element={<Protected><Profile /></Protected>} />
-        <Route path="/settings"          element={<Protected><Settings /></Protected>} />
-        <Route path="/notifications"     element={<Protected><Notifications /></Protected>} />
-        <Route path="/messages"          element={<Protected><Messages /></Protected>} />
-        <Route path="/messages/:userId"  element={<Protected><Messages /></Protected>} />
-        <Route path="/feature-request"   element={<Protected><FeatureRequest /></Protected>} />
+          {/* Protected */}
+          <Route path="/"                  element={<Protected><Home /></Protected>} />
+          <Route path="/explore"           element={<Protected><Explore /></Protected>} />
+          <Route path="/events"            element={<Protected><Events /></Protected>} />
+          <Route path="/news"              element={<Protected><News /></Protected>} />
+          <Route path="/fit"               element={<Protected><FitRating /></Protected>} />
+          <Route path="/fitrating"         element={<Protected><FitRating /></Protected>} />
+          <Route path="/wall"              element={<Protected><Shoutouts /></Protected>} />
+          <Route path="/profile"           element={<Protected><Profile /></Protected>} />
+          <Route path="/profile/:username" element={<Protected><Profile /></Protected>} />
+          <Route path="/settings"          element={<Protected><Settings /></Protected>} />
+          <Route path="/notifications"     element={<Protected><Notifications /></Protected>} />
+          <Route path="/messages"          element={<Protected><Messages /></Protected>} />
+          <Route path="/messages/:userId"  element={<Protected><Messages /></Protected>} />
+          <Route path="/feature-request"   element={<Protected><FeatureRequest /></Protected>} />
 
-        {/* Admin only */}
-        <Route path="/admin" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
+          {/* Admin only */}
+          <Route path="/admin" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
 
-        {/* Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </main>
 
+      {/* Fixed bottom nav */}
       {user && <BottomNav />}
-    </>
+    </div>
   );
 }
