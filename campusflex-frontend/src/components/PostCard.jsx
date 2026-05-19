@@ -6,16 +6,26 @@ import VerifiedBadge from "./VerifiedBadge";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 
-// ── Video player — autoplay on scroll, capped height, no black receipt bars ──
+// ── VideoPlayer ───────────────────────────────────────────────────────────────
+// • Autoplays (muted) when ≥50% visible — restarts from 0 every time
+// • Pauses + resets when scrolled away or navigated off
+// • Mute/unmute button so users can hear audio
 function VideoPlayer({ src }) {
-  const videoRef = useRef(null);
+  const videoRef   = useRef(null);
+  const [muted, setMuted] = useState(true); // start muted so browser allows autoplay
+
+  // Intersection-based autoplay
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          // Always restart from the beginning
           video.currentTime = 0;
+          video.muted = true;   // reset mute so autoplay works
+          setMuted(true);
           video.play().catch(() => {});
         } else {
           video.pause();
@@ -24,33 +34,64 @@ function VideoPlayer({ src }) {
       },
       { threshold: 0.5 }
     );
+
     observer.observe(video);
     return () => observer.disconnect();
   }, [src]);
+
+  // Pause on unmount / route change
   useEffect(() => {
     const video = videoRef.current;
     return () => { if (video) { video.pause(); video.currentTime = 0; } };
   }, []);
+
+  const toggleMute = (e) => {
+    e.stopPropagation();
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setMuted(video.muted);
+    // If user unmutes, make sure it's playing
+    if (!video.muted && video.paused) video.play().catch(() => {});
+  };
+
   return (
-    <video
-      ref={videoRef}
-      src={src}
-      muted
-      playsInline
-      loop={false}
-      controls
-      style={{
-        width: "100%",
-        height: "100%",
-        objectFit: "cover",   // ← fills frame, no black bars
-        display: "block",
-        background: "#000",
-      }}
-    />
+    <div style={{ position: "relative", width: "100%", height: "100%", background: "#000", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <video
+        ref={videoRef}
+        src={src}
+        playsInline
+        loop={false}
+        // NO controls — we control play via IntersectionObserver; mute button below
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain",   // ← full frame, nothing cropped
+          display: "block",
+        }}
+      />
+      {/* Mute / Unmute toggle */}
+      <button
+        onClick={toggleMute}
+        style={{
+          position: "absolute", bottom: 10, right: 10,
+          background: "rgba(0,0,0,0.55)", border: "none",
+          borderRadius: "50%", width: 34, height: 34,
+          color: "#fff", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 15, zIndex: 5,
+        }}
+      >
+        {muted ? "🔇" : "🔊"}
+      </button>
+    </div>
   );
 }
 
-// ── Media Carousel — square crop, swipeable, dot indicators ──────────────────
+// ── MediaCarousel ─────────────────────────────────────────────────────────────
+// • Square (1:1) container with objectFit:contain → full image, no cropping
+// • Black background so letter-box bars aren't jarring
+// • Swipeable, arrows, dots, counter
 function MediaCarousel({ mediaItems }) {
   const [current, setCurrent] = useState(0);
   const startXRef             = useRef(null);
@@ -85,11 +126,13 @@ function MediaCarousel({ mediaItems }) {
             style={{
               minWidth: "100%",
               flexShrink: 0,
-              // ── THE FIX: square frame, objectFit:cover crops excess ──────
+              // ── 1:1 square container — image/video contained inside, nothing cropped ──
               aspectRatio: "1 / 1",
-              maxHeight: 480,
-              overflow: "hidden",
               background: "#000",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
             }}
           >
             {item.type === "video"
@@ -98,9 +141,9 @@ function MediaCarousel({ mediaItems }) {
                   src={item.url}
                   alt={`media-${i}`}
                   style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",   // ← crops to square, no empty space
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",   // ← no crop, no zoom, full image visible
                     display: "block",
                   }}
                 />
@@ -124,7 +167,7 @@ function MediaCarousel({ mediaItems }) {
         </div>
       )}
 
-      {/* Dots */}
+      {/* Dot indicators */}
       {mediaItems.length > 1 && (
         <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 2 }}>
           {mediaItems.map((_, i) => (
@@ -148,7 +191,7 @@ function ShareModal({ post, author, onClose }) {
     { name: "Twitter/X", bg: "#000",    icon: "https://cdn.cdnlogo.com/logos/t/96/twitter-x.svg", action: () => window.open(`https://twitter.com/intent/tweet?text=${enc}`, "_blank") },
     { name: "Facebook",  bg: "#1877F2", icon: "https://cdn.cdnlogo.com/logos/f/83/facebook.svg",  action: () => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank") },
     { name: "TikTok",    bg: "#010101", emoji: "🎵", action: () => { navigator.clipboard.writeText(url); toast.success("Link copied — paste into TikTok!"); onClose(); } },
-    { name: "Instagram", bg: "#C13584", emoji: "📸", action: () => { navigator.clipboard.writeText(text); toast.success("Caption copied — paste into Instagram!"); onClose(); } },
+    { name: "Instagram", bg: "#C13584", emoji: "📸", action: () => { navigator.clipboard.writeText(text); toast.success("Caption copied!"); onClose(); } },
   ];
 
   const handleNativeShare = async () => {
@@ -175,13 +218,14 @@ function ShareModal({ post, author, onClose }) {
       <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "var(--surface)", borderRadius: "24px 24px 0 0", padding: "20px 16px 36px", border: "1px solid var(--border)" }}>
         <div style={{ width: 40, height: 4, background: "var(--border)", borderRadius: 2, margin: "0 auto 18px" }} />
         <h3 className="syne" style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", marginBottom: 4 }}>Share Post</h3>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 18 }}>Share @{author.username}'s post to another app</p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginBottom: 18 }}>Share @{author.username}'s post</p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 14 }}>
           {apps.map((app) => (
             <button key={app.name} onClick={app.action} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7 }}>
               {app.icon
                 ? <img src={app.icon} alt={app.name} style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 8 }} />
-                : <div style={{ width: 32, height: 32, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{app.emoji}</div>}
+                : <div style={{ width: 32, height: 32, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{app.emoji}</div>
+              }
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>{app.name}</span>
             </button>
           ))}
@@ -211,21 +255,17 @@ export default function PostCard({ post, onDelete }) {
   const [loadingComments, setLoadingComments] = useState(false);
   const [showShare, setShowShare]       = useState(false);
 
-  const author = post.author || {};
-
+  const author     = post.author || {};
   const mediaItems = post.media?.length
     ? post.media
-    : post.mediaUrl
-      ? [{ url: post.mediaUrl, type: post.mediaType || "image" }]
-      : [];
+    : post.mediaUrl ? [{ url: post.mediaUrl, type: post.mediaType || "image" }] : [];
 
   const goTo = (username) => { if (username) navigate(`/profile/${username}`); };
 
   const handleLike = async () => {
     try {
       const { data } = await api.post(`/posts/${post._id}/like`);
-      setLiked(data.liked);
-      setLikeCount(data.likeCount);
+      setLiked(data.liked); setLikeCount(data.likeCount);
     } catch { toast.error("Could not like post"); }
   };
 
@@ -243,9 +283,7 @@ export default function PostCard({ post, onDelete }) {
     setLoadingComments(true);
     try {
       const { data } = await api.get(`/posts/${post._id}/comments`);
-      setComments(data);
-      setCommentCount(data.length);
-      setShowComments(true);
+      setComments(data); setCommentCount(data.length); setShowComments(true);
     } catch { toast.error("Could not load comments"); }
     finally { setLoadingComments(false); }
   };
@@ -277,17 +315,10 @@ export default function PostCard({ post, onDelete }) {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px" }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
-            <div
-              onClick={() => goTo(author.username)}
-              style={{ width: 42, height: 42, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}
-            >
+            <div onClick={() => goTo(author.username)} style={{ width: 42, height: 42, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}>
               {!author.profilePicture && author.username?.[0]?.toUpperCase()}
             </div>
-            {author.verified && (
-              <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}>
-                <VerifiedBadge size={14} />
-              </div>
-            )}
+            {author.verified && <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}><VerifiedBadge size={14} /></div>}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -297,15 +328,12 @@ export default function PostCard({ post, onDelete }) {
                 <span style={{ background: "#ec489918", color: "var(--pink)", border: "1px solid #ec489933", borderRadius: 20, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>Admin</span>
               )}
             </div>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>
-              {new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-            </span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>{new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
           </div>
           {isAdmin && (
             <button onClick={handleDelete} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round">
-                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
-                <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
               </svg>
             </button>
           )}
@@ -338,8 +366,7 @@ export default function PostCard({ post, onDelete }) {
             <button onClick={() => setShowShare(true)} style={{ background: "none", border: "none", cursor: "pointer" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
             </button>
           </div>
@@ -350,25 +377,13 @@ export default function PostCard({ post, onDelete }) {
               <span style={{ color: "var(--subtext)" }}>{post.caption}</span>
             </p>
           )}
-          {post.tags?.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>
-              {post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}
-            </div>
-          )}
-          {post.mentions?.length > 0 && (
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-              {post.mentions.map((m) => (
-                <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>@{m}</span>
-              ))}
-            </div>
-          )}
+          {post.tags?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>{post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}</div>}
+          {post.mentions?.length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{post.mentions.map((m) => <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>@{m}</span>)}</div>}
 
           {/* Comments */}
           {showComments && (
             <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-              {comments.length === 0 && (
-                <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>No comments yet. Be the first!</div>
-              )}
+              {comments.length === 0 && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>No comments yet. Be the first!</div>}
               {comments.map((cm) => {
                 const canDelete = cm.author?._id === user?._id || isAdmin;
                 return (
@@ -381,15 +396,13 @@ export default function PostCard({ post, onDelete }) {
                         <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 6, cursor: "pointer" }}>{cm.author?.username}</span>
                         <span style={{ color: "var(--subtext)" }}>{cm.text}</span>
                       </div>
-                      {canDelete && (
-                        <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>
-                      )}
+                      {canDelete && <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>}
                     </div>
                   </div>
                 );
               })}
               <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                <div onClick={() => goTo(user?.username)} style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "pointer", background: user?.profilePicture ? `url(${user.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: user?.profilePicture ? `url(${user.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
                   {!user?.profilePicture && user?.username?.[0]?.toUpperCase()}
                 </div>
                 <input value={commentText} onChange={(e) => setCommentText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitComment()} placeholder="Add a comment..." style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "8px 14px", color: "var(--text)", fontSize: 13, outline: "none" }} />

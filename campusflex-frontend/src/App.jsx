@@ -16,14 +16,12 @@ import AdminDashboard from "./pages/AdminDashboard";
 import Messages from "./pages/Messages";
 import Notifications from "./pages/Notifications";
 import FeatureRequest from "./pages/FeatureRequest";
+import PostDetail from "./pages/PostDetail";
 
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "center",
-      height: "100dvh", color: "var(--muted)", fontFamily: "Syne", fontWeight: 700, fontSize: 18,
-    }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100dvh", color: "var(--muted)", fontFamily: "Syne", fontWeight: 700, fontSize: 18 }}>
       CampusFlex...
     </div>
   );
@@ -39,36 +37,19 @@ export default function App() {
   const { user } = useAuth();
 
   return (
-    /*
-     * ── Layout wrapper ───────────────────────────────────────────────────────
-     * • maxWidth 480px centers the app on tablets/desktops like a phone frame
-     * • margin: 0 auto centers it horizontally
-     * • minHeight 100dvh fills the full visible viewport (accounts for mobile
-     *   browser chrome shrinking/growing)
-     * • background covers the whole column so no white gaps on tall screens
-     */
     <div style={{
       maxWidth: 480,
       margin: "0 auto",
       minHeight: "100dvh",
       background: "var(--bg)",
       position: "relative",
-      // Soft border on wide screens so the column is visible
       boxShadow: "0 0 0 1px var(--border)",
     }}>
-
-      {/* Sticky top nav — stays at top of this column, not the whole viewport */}
       {user && <Navbar />}
 
-      {/*
-       * ── Main content area ─────────────────────────────────────────────────
-       * paddingBottom clears the fixed BottomNav (≈65px) + iPhone home
-       * indicator (env safe area). Without this, the last card on every page
-       * is hidden behind the bottom bar.
-       */}
       <main style={{
         paddingBottom: user ? "calc(68px + env(safe-area-inset-bottom))" : 0,
-        minHeight: "calc(100dvh - 52px)", // fill below the top nav
+        minHeight: "calc(100dvh - 52px)",
         boxSizing: "border-box",
       }}>
         <Routes>
@@ -91,6 +72,8 @@ export default function App() {
           <Route path="/messages"          element={<Protected><Messages /></Protected>} />
           <Route path="/messages/:userId"  element={<Protected><Messages /></Protected>} />
           <Route path="/feature-request"   element={<Protected><FeatureRequest /></Protected>} />
+          {/* ── Single post view — linked from profile grid & share links ── */}
+          <Route path="/post/:id"          element={<Protected><PostDetail /></Protected>} />
 
           {/* Admin only */}
           <Route path="/admin" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
@@ -100,7 +83,6 @@ export default function App() {
         </Routes>
       </main>
 
-      {/* Fixed bottom nav */}
       {user && <BottomNav />}
     </div>
   );
