@@ -1,12 +1,15 @@
 const router = require("express").Router();
 const Event  = require("../models/Event");
-const { protect, adminOnly } = require("../middleware/auth");
+const { protect, optionalAuth, adminOnly } = require("../middleware/auth");
 const { uploadPost } = require("../middleware/cloudinary");
 
-// GET /api/events?campus=unilag
-router.get("/", protect, async (req, res) => {
+const parseCampus = (raw) =>
+  raw && raw !== "undefined" && raw !== "null" ? raw : null;
+
+// GET /api/events — public
+router.get("/", optionalAuth, async (req, res) => {
   try {
-    const { campus } = req.query;
+    const campus = parseCampus(req.query.campus);
     const events = await Event.find(campus ? { campus } : {})
       .populate("author", "username profilePicture verified role")
       .sort({ createdAt: -1 });
@@ -16,7 +19,7 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
-// POST /api/events — admin posts with media + caption
+// POST /api/events — admin only
 router.post("/", protect, adminOnly, uploadPost.single("media"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "Please select an image or video" });
@@ -35,7 +38,7 @@ router.post("/", protect, adminOnly, uploadPost.single("media"), async (req, res
   }
 });
 
-// DELETE /api/events/:id
+// DELETE /api/events/:id — admin only
 router.delete("/:id", protect, adminOnly, async (req, res) => {
   try {
     await Event.findByIdAndDelete(req.params.id);

@@ -2,21 +2,18 @@ const router       = require("express").Router();
 const Post         = require("../models/Post");
 const { Comment }  = require("../models/index");
 const Notification = require("../models/Notification");
-const { protect, adminOnly } = require("../middleware/auth");
-const { uploadPost }         = require("../middleware/cloudinary");
+const { protect, optionalAuth, adminOnly } = require("../middleware/auth");
+const { uploadPost } = require("../middleware/cloudinary");
 
-// Sanitise the campus query param — if the frontend sends the literal string
-// "undefined" or "null" (which happens when JS template-literals a falsy value),
-// treat it as "no filter" so we return all posts instead of zero.
 const parseCampus = (raw) =>
   raw && raw !== "undefined" && raw !== "null" ? raw : null;
 
-// GET /api/posts?campus=maseno&page=1&limit=20
-router.get("/", protect, async (req, res) => {
+// GET /api/posts — public, optionalAuth so logged-in users get like state
+router.get("/", optionalAuth, async (req, res) => {
   try {
-    const campus   = parseCampus(req.query.campus);
-    const page     = Number(req.query.page)  || 1;
-    const limit    = Number(req.query.limit) || 20;
+    const campus = parseCampus(req.query.campus);
+    const page   = Number(req.query.page)  || 1;
+    const limit  = Number(req.query.limit) || 20;
 
     const posts = await Post.find(campus ? { campus } : {})
       .populate("author", "username profilePicture verified role badges campus")
@@ -31,8 +28,8 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
-// GET /api/posts/:id
-router.get("/:id", protect, async (req, res) => {
+// GET /api/posts/:id — public
+router.get("/:id", optionalAuth, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id)
       .populate("author", "username profilePicture verified role badges campus");
@@ -43,15 +40,13 @@ router.get("/:id", protect, async (req, res) => {
   }
 });
 
-// POST /api/posts — admin uploads up to 4 media files
+// POST /api/posts — admin only
 router.post("/", protect, adminOnly, uploadPost.array("media", 4), async (req, res) => {
   try {
     const files = req.files || [];
     if (!files.length) return res.status(400).json({ message: "Please select at least one image or video" });
-
     const videos = files.filter((f) => f.mimetype.startsWith("video"));
-    if (videos.length > 1) return res.status(400).json({ message: "Maximum 1 video per post. You can add up to 3 images alongside it." });
-    if (files.length > 4)  return res.status(400).json({ message: "Maximum 4 media items per post" });
+    if (videos.length > 1) return res.status(400).json({ message: "Maximum 1 video per post." });
 
     const { caption, tags, mentions } = req.body;
     const mediaArray = files.map((f) => ({
@@ -77,7 +72,7 @@ router.post("/", protect, adminOnly, uploadPost.array("media", 4), async (req, r
   }
 });
 
-// DELETE /api/posts/:id — admin deletes post
+// DELETE /api/posts/:id — admin only
 router.delete("/:id", protect, adminOnly, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
@@ -90,10 +85,10 @@ router.delete("/:id", protect, adminOnly, async (req, res) => {
   }
 });
 
-// POST /api/posts/:id/like — toggle like
+// POST /api/posts/:id/like — requires login
 router.post("/:id/like", protect, async (req, res) => {
   try {
-    const post = await Post.findById(req.params.id);
+    const post    = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
     const already = post.likes.includes(req.user._id);
     if (already) {
@@ -102,11 +97,8 @@ router.post("/:id/like", protect, async (req, res) => {
       post.likes.push(req.user._id);
       if (post.author.toString() !== req.user._id.toString()) {
         await Notification.create({
-          recipient: post.author,
-          sender:    req.user._id,
-          type:      "like",
-          post:      post._id,
-          text:      `@${req.user.username} liked your post`,
+          recipient: post.author, sender: req.user._id, type: "like", post: post._id,
+          text: `@${req.user.username} liked your post`,
         });
       }
     }
@@ -117,8 +109,8 @@ router.post("/:id/like", protect, async (req, res) => {
   }
 });
 
-// GET /api/posts/:id/comments
-router.get("/:id/comments", protect, async (req, res) => {
+// GET /api/posts/:id/comments — public
+router.get("/:id/comments", optionalAuth, async (req, res) => {
   try {
     const comments = await Comment.find({ post: req.params.id })
       .populate("author", "username profilePicture verified role")
@@ -129,7 +121,7 @@ router.get("/:id/comments", protect, async (req, res) => {
   }
 });
 
-// POST /api/posts/:id/comments
+// POST /api/posts/:id/comments — requires login
 router.post("/:id/comments", protect, async (req, res) => {
   try {
     const { text } = req.body;
@@ -139,11 +131,8 @@ router.post("/:id/comments", protect, async (req, res) => {
     await comment.populate("author", "username profilePicture verified role");
     if (post && post.author.toString() !== req.user._id.toString()) {
       await Notification.create({
-        recipient: post.author,
-        sender:    req.user._id,
-        type:      "comment",
-        post:      post._id,
-        text:      `@${req.user.username} commented on your post`,
+        recipient: post.author, sender: req.user._id, type: "comment", post: post._id,
+        text: `@${req.user.username} commented on your post`,
       });
     }
     res.status(201).json(comment);
@@ -152,7 +141,7 @@ router.post("/:id/comments", protect, async (req, res) => {
   }
 });
 
-// DELETE /api/posts/:id/comments/:commentId — own comment or admin
+// DELETE /api/posts/:id/comments/:commentId
 router.delete("/:id/comments/:commentId", protect, async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.commentId);

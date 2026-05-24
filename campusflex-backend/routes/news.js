@@ -1,14 +1,16 @@
 const router = require("express").Router();
 const News   = require("../models/News");
-const { protect, adminOnly } = require("../middleware/auth");
+const { protect, optionalAuth, adminOnly } = require("../middleware/auth");
 const { uploadPost } = require("../middleware/cloudinary");
 
-// GET /api/news?campus=unilag
-router.get("/", protect, async (req, res) => {
+const parseCampus = (raw) =>
+  raw && raw !== "undefined" && raw !== "null" ? raw : null;
+
+// GET /api/news — public
+router.get("/", optionalAuth, async (req, res) => {
   try {
-    const { campus } = req.query;
-    const filter = campus ? { campus } : {};
-    const articles = await News.find(filter)
+    const campus   = parseCampus(req.query.campus);
+    const articles = await News.find(campus ? { campus } : {})
       .populate("author", "username profilePicture verified role")
       .sort({ createdAt: -1 });
     res.json(articles);
@@ -17,7 +19,7 @@ router.get("/", protect, async (req, res) => {
   }
 });
 
-// POST /api/news — admin posts news (media + caption only)
+// POST /api/news — admin only
 router.post("/", protect, adminOnly, uploadPost.single("media"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: "Please select an image or video" });
@@ -36,7 +38,7 @@ router.post("/", protect, adminOnly, uploadPost.single("media"), async (req, res
   }
 });
 
-// DELETE /api/news/:id — admin deletes
+// DELETE /api/news/:id — admin only
 router.delete("/:id", protect, adminOnly, async (req, res) => {
   try {
     await News.findByIdAndDelete(req.params.id);

@@ -18,6 +18,7 @@ import Notifications from "./pages/Notifications";
 import FeatureRequest from "./pages/FeatureRequest";
 import PostDetail from "./pages/PostDetail";
 
+// Requires login — redirects to /login if not authenticated
 const Protected = ({ children }) => {
   const { user, loading } = useAuth();
   if (loading) return (
@@ -45,7 +46,8 @@ export default function App() {
       position: "relative",
       boxShadow: "0 0 0 1px var(--border)",
     }}>
-      {user && <Navbar />}
+      {/* Navbar always visible — shows Login/Signup buttons when logged out */}
+      <Navbar />
 
       <main style={{
         paddingBottom: user ? "calc(68px + env(safe-area-inset-bottom))" : 0,
@@ -53,37 +55,40 @@ export default function App() {
         boxSizing: "border-box",
       }}>
         <Routes>
-          {/* Public */}
-          <Route path="/signup" element={!user ? <Signup />  : <Navigate to="/" replace />} />
-          <Route path="/login"  element={!user ? <Login />   : <Navigate to="/" replace />} />
+          {/* Auth pages — redirect to home if already logged in */}
+          <Route path="/signup" element={!user ? <Signup /> : <Navigate to="/" replace />} />
+          <Route path="/login"  element={!user ? <Login />  : <Navigate to="/" replace />} />
 
-          {/* Protected */}
-          <Route path="/"                  element={<Protected><Home /></Protected>} />
-          <Route path="/explore"           element={<Protected><Explore /></Protected>} />
-          <Route path="/events"            element={<Protected><Events /></Protected>} />
-          <Route path="/news"              element={<Protected><News /></Protected>} />
-          <Route path="/fit"               element={<Protected><FitRating /></Protected>} />
-          <Route path="/fitrating"         element={<Protected><FitRating /></Protected>} />
-          <Route path="/wall"              element={<Protected><Shoutouts /></Protected>} />
-          <Route path="/profile"           element={<Protected><Profile /></Protected>} />
-          <Route path="/profile/:username" element={<Protected><Profile /></Protected>} />
+          {/* ── Public pages — no login required ── */}
+          <Route path="/"                  element={<Home />} />
+          <Route path="/explore"           element={<Explore />} />
+          <Route path="/events"            element={<Events />} />
+          <Route path="/news"              element={<News />} />
+          <Route path="/fit"               element={<FitRating />} />
+          <Route path="/fitrating"         element={<FitRating />} />
+          <Route path="/wall"              element={<Shoutouts />} />
+          <Route path="/profile/:username" element={<Profile />} />
+          <Route path="/post/:id"          element={<PostDetail />} />
+
+          {/* ── Semi-protected — own profile needs login ── */}
+          <Route path="/profile" element={<Protected><Profile /></Protected>} />
+
+          {/* ── Fully protected — requires login ── */}
           <Route path="/settings"          element={<Protected><Settings /></Protected>} />
           <Route path="/notifications"     element={<Protected><Notifications /></Protected>} />
           <Route path="/messages"          element={<Protected><Messages /></Protected>} />
           <Route path="/messages/:userId"  element={<Protected><Messages /></Protected>} />
           <Route path="/feature-request"   element={<Protected><FeatureRequest /></Protected>} />
-          {/* ── Single post view — linked from profile grid & share links ── */}
-          <Route path="/post/:id"          element={<Protected><PostDetail /></Protected>} />
 
           {/* Admin only */}
           <Route path="/admin" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
 
-          {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
-      {user && <BottomNav />}
+      {/* Bottom nav always visible */}
+      <BottomNav />
     </div>
   );
 }
