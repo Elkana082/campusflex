@@ -5,16 +5,21 @@ import VerifiedBadge from "./VerifiedBadge";
 import api from "../api/axios";
 import toast from "react-hot-toast";
 
+const needsLogin = (navigate, action) => {
+  toast(`Login to ${action}`, { icon: "🔒" });
+  setTimeout(() => navigate("/login"), 800);
+};
+
 export default function StoryBar() {
-  const { currentCampus, isAdmin } = useAuth();
-  const navigate  = useNavigate();
-  const [stories, setStories]             = useState([]);
-  const [viewing, setViewing]             = useState(null);
-  const [uploading, setUploading]         = useState(false);
+  const { currentCampus, isAdmin, user } = useAuth();
+  const navigate = useNavigate();
+  const [stories, setStories]               = useState([]);
+  const [viewing, setViewing]               = useState(null);
+  const [uploading, setUploading]           = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
-  const [replyText, setReplyText]         = useState("");
-  const [showReplies, setShowReplies]     = useState(false);
-  const [isSending, setIsSending]         = useState(false);
+  const [replyText, setReplyText]           = useState("");
+  const [showReplies, setShowReplies]       = useState(false);
+  const [isSending, setIsSending]           = useState(false);
   const timerRef = useRef(null);
 
   const safeCampus = currentCampus && currentCampus !== "undefined" && currentCampus !== "null"
@@ -51,9 +56,10 @@ export default function StoryBar() {
     navigate(`/profile/${username}`);
   };
 
-  // ── Like ────────────────────────────────────────────────────────────────────
+  // ── Like — requires login ───────────────────────────────────────────────────
   const handleLike = async (e) => {
     e.stopPropagation();
+    if (!user) return needsLogin(navigate, "like stories");
     if (!viewing) return;
     try {
       const { data } = await api.post(`/stories/${viewing._id}/like`);
@@ -63,9 +69,10 @@ export default function StoryBar() {
     } catch { toast.error("Failed to like"); }
   };
 
-  // ── Reply ───────────────────────────────────────────────────────────────────
+  // ── Reply — requires login ──────────────────────────────────────────────────
   const handleReply = async (e) => {
     if (e) e.stopPropagation();
+    if (!user) return needsLogin(navigate, "reply to stories");
     if (!replyText.trim() || isSending) return;
     setIsSending(true);
     try {
@@ -91,7 +98,7 @@ export default function StoryBar() {
     } catch { toast.error("Failed to delete story"); }
   };
 
-  // ── Multi-file upload ───────────────────────────────────────────────────────
+  // ── Admin multi-file upload ─────────────────────────────────────────────────
   const handleUpload = async (e) => {
     const selected = Array.from(e.target.files);
     if (!selected.length) return;
@@ -124,7 +131,6 @@ export default function StoryBar() {
   const ViewerOverlay = viewing && (
     <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 99999, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-      {/* Header */}
       <div style={{ position: "absolute", top: 0, width: "100%", padding: "50px 15px 30px", zIndex: 100, background: "linear-gradient(to bottom, rgba(0,0,0,0.9), transparent)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div onClick={(e) => handleProfileRedirect(e, viewing.author?.username)} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
@@ -134,14 +140,10 @@ export default function StoryBar() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {/* Admin delete button */}
             {isAdmin && (
-              <button
-                onClick={handleDeleteStory}
-                style={{ background: "rgba(239,68,68,0.25)", border: "1px solid rgba(239,68,68,0.5)", color: "#fff", width: 38, height: 38, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-              >
+              <button onClick={handleDeleteStory} style={{ background: "rgba(239,68,68,0.25)", border: "1px solid rgba(239,68,68,0.5)", color: "#fff", width: 38, height: 38, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round">
-                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
                 </svg>
               </button>
             )}
@@ -150,7 +152,6 @@ export default function StoryBar() {
         </div>
       </div>
 
-      {/* Media */}
       <div style={{ flex: 1, width: "100%", height: "100%", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div onClick={goPrev} style={{ position: "absolute", left: 0, width: "35%", height: "100%", zIndex: 10 }} />
         <div onClick={goNext} style={{ position: "absolute", right: 0, width: "65%", height: "100%", zIndex: 10 }} />
@@ -160,14 +161,6 @@ export default function StoryBar() {
         }
       </div>
 
-      {/* Like count badge */}
-      {viewing.likeCount > 0 && (
-        <div style={{ position: "absolute", top: "50%", right: 12, transform: "translateY(-50%)", background: "rgba(0,0,0,0.5)", borderRadius: 20, padding: "6px 10px", color: "#fff", fontSize: 13, fontWeight: 700, zIndex: 50 }}>
-          ❤️ {viewing.likeCount}
-        </div>
-      )}
-
-      {/* Interactions */}
       <div onClick={(e) => e.stopPropagation()} style={{ position: "absolute", bottom: 0, width: "100%", padding: "20px 15px 40px", background: "linear-gradient(to top, rgba(0,0,0,0.9), transparent)", zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={handleLike} style={{ background: "none", border: "none", fontSize: 28, cursor: "pointer", transition: "transform 0.15s", transform: viewing.userLiked ? "scale(1.2)" : "scale(1)" }}>
@@ -177,10 +170,12 @@ export default function StoryBar() {
             value={replyText}
             onChange={(e) => setReplyText(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleReply()}
-            placeholder="Send a reply..."
-            style={{ flex: 1, height: 46, borderRadius: 23, background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", padding: "0 20px", outline: "none", backdropFilter: "blur(10px)", fontSize: 15 }}
+            onClick={() => { if (!user) needsLogin(navigate, "reply to stories"); }}
+            readOnly={!user}
+            placeholder={user ? "Send a reply..." : "Login to reply..."}
+            style={{ flex: 1, height: 46, borderRadius: 23, background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", padding: "0 20px", outline: "none", backdropFilter: "blur(10px)", fontSize: 15, cursor: user ? "text" : "pointer" }}
           />
-          {replyText.trim() && (
+          {user && replyText.trim() && (
             <button onClick={handleReply} disabled={isSending} style={{ background: "var(--accent)", border: "none", borderRadius: 12, padding: "10px 14px", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
               {isSending ? "..." : "Send"}
             </button>
@@ -210,16 +205,13 @@ export default function StoryBar() {
   return (
     <div style={{ width: "100%", background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
       <div style={{ display: "flex", gap: 14, padding: "14px", overflowX: "auto", scrollbarWidth: "none" }}>
-
         {isAdmin && (
           <label style={{ flexShrink: 0, cursor: "pointer", textAlign: "center" }}>
             <input type="file" accept="image/*,video/*" multiple onChange={handleUpload} style={{ display: "none" }} />
             <div style={{ width: 66, height: 66, borderRadius: "50%", background: uploading ? "#6366f1" : "linear-gradient(135deg,#7c3aed,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: uploading ? 14 : 32, fontWeight: 800, border: "3px solid var(--border)" }}>
               {uploading ? `${uploadProgress.done}/${uploadProgress.total}` : "+"}
             </div>
-            <div style={{ fontSize: 10, marginTop: 5, color: "var(--muted)", fontWeight: 600 }}>
-              {uploading ? "Posting..." : "Story"}
-            </div>
+            <div style={{ fontSize: 10, marginTop: 5, color: "var(--muted)", fontWeight: 600 }}>{uploading ? "Posting..." : "Story"}</div>
           </label>
         )}
 
@@ -234,7 +226,7 @@ export default function StoryBar() {
           </div>
         ))}
 
-        {!isAdmin && stories.length === 0 && (
+        {stories.length === 0 && (
           <div style={{ padding: "10px 0", color: "var(--muted)", fontSize: 12, display: "flex", alignItems: "center" }}>
             No stories yet
           </div>

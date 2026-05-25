@@ -52,37 +52,25 @@ export default function Navbar() {
         position: "sticky", top: 0, zIndex: 100,
         background: "var(--nav-bg)", backdropFilter: "blur(18px)",
         borderBottom: "1px solid var(--border)",
-        // ── KEY FIX: use left/right 0 not transform tricks ──────────────────
         left: 0, right: 0,
         padding: "7px 10px",
         display: "flex", alignItems: "center", gap: 6,
         boxSizing: "border-box",
         width: "100%",
       }}>
-
-        {/* Logo — short enough to never overflow */}
-        <button
-          onClick={() => navigate("/")}
-          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}
-        >
+        {/* Logo */}
+        <button onClick={() => navigate("/")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0 }}>
           <span className="syne gradient-text" style={{ fontWeight: 800, fontSize: 13, letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>
-            CF
+            CampusFlex
           </span>
         </button>
 
-        {/* Spacer */}
         <div style={{ flex: 1 }} />
 
-        {/* Campus pill — emoji only on very narrow screens, emoji+short otherwise */}
+        {/* Campus pill — always visible */}
         <button
           onClick={() => setShowSwitcher(true)}
-          style={{
-            display: "flex", alignItems: "center", gap: 3,
-            background: campus.color + "18", border: `1px solid ${campus.color}44`,
-            borderRadius: 20, padding: "4px 8px",
-            cursor: "pointer", color: campus.color, fontSize: 11, fontWeight: 700,
-            flexShrink: 0, maxWidth: 100, overflow: "hidden",
-          }}
+          style={{ display: "flex", alignItems: "center", gap: 3, background: campus.color + "18", border: `1px solid ${campus.color}44`, borderRadius: 20, padding: "4px 8px", cursor: "pointer", color: campus.color, fontSize: 11, fontWeight: 700, flexShrink: 0, maxWidth: 100, overflow: "hidden" }}
         >
           <span>{campus.emoji}</span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{campus.short}</span>
@@ -91,77 +79,72 @@ export default function Navbar() {
           </svg>
         </button>
 
-        {/* Admin shield */}
-        {isAdmin && (
-          <button
-            onClick={() => navigate("/admin")}
-            style={{ background: "var(--accent)", border: "none", borderRadius: 8, padding: "4px 7px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}
-          >
-            🛡️
-          </button>
-        )}
-
-        {/* ••• dropdown — messages · notifs · dark mode */}
-        <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
-          <button
-            onClick={() => setShowMenu((v) => !v)}
-            style={{
-              background: "var(--surface)", border: "1px solid var(--border)",
-              borderRadius: 8, padding: "5px 7px", cursor: "pointer",
-              display: "flex", alignItems: "center", position: "relative",
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round">
-              <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
-            </svg>
-            {totalBadge > 0 && (
-              <div style={{ position: "absolute", top: -4, right: -4, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 14, height: 14, fontSize: 8, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg)" }}>
-                {totalBadge > 9 ? "9+" : totalBadge}
-              </div>
+        {/* ── Logged-in controls ────────────────────────────────────────────── */}
+        {user ? (
+          <>
+            {isAdmin && (
+              <button onClick={() => navigate("/admin")} style={{ background: "var(--accent)", border: "none", borderRadius: 8, padding: "4px 7px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>🛡️</button>
             )}
-          </button>
 
-          {showMenu && (
-            <div style={{
-              position: "fixed", top: 56, right: 10,
-              background: "var(--bg)", border: "1px solid var(--border)",
-              borderRadius: 14, width: 210,
-              boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 200, overflow: "hidden",
-            }}>
-              {/* Appearance */}
-              <p style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Appearance</p>
+            {/* ••• dropdown */}
+            <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={() => { toggleDarkMode(); setShowMenu(false); }}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}
+                onClick={() => setShowMenu((v) => !v)}
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 7px", cursor: "pointer", display: "flex", alignItems: "center", position: "relative" }}
               >
-                {darkMode
-                  ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-                  : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
-                }
-                <span style={{ flex: 1, textAlign: "left" }}>{darkMode ? "Light mode" : "Dark mode"}</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+                </svg>
+                {totalBadge > 0 && (
+                  <div style={{ position: "absolute", top: -4, right: -4, background: "#ef4444", color: "#fff", borderRadius: "50%", width: 14, height: 14, fontSize: 8, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", border: "2px solid var(--bg)" }}>
+                    {totalBadge > 9 ? "9+" : totalBadge}
+                  </div>
+                )}
               </button>
 
-              {/* Activity */}
-              <p style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Activity</p>
-              <button
-                onClick={() => { navigate("/messages"); setShowMenu(false); }}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-                <span style={{ flex: 1, textAlign: "left" }}>Messages</span>
-                <Pill n={msgCount} />
-              </button>
-              <button
-                onClick={() => { navigate("/notifications"); setShowMenu(false); }}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
-                <span style={{ flex: 1, textAlign: "left" }}>Notifications</span>
-                <Pill n={notifCount} />
-              </button>
+              {showMenu && (
+                <div style={{ position: "fixed", top: 56, right: 10, background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 14, width: 210, boxShadow: "0 8px 24px rgba(0,0,0,0.12)", zIndex: 200, overflow: "hidden" }}>
+                  <p style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Appearance</p>
+                  <button onClick={() => { toggleDarkMode(); setShowMenu(false); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}>
+                    {darkMode
+                      ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                      : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                    }
+                    <span style={{ flex: 1, textAlign: "left" }}>{darkMode ? "Light mode" : "Dark mode"}</span>
+                  </button>
+
+                  <p style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Activity</p>
+                  <button onClick={() => { navigate("/messages"); setShowMenu(false); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                    <span style={{ flex: 1, textAlign: "left" }}>Messages</span>
+                    <Pill n={msgCount} />
+                  </button>
+                  <button onClick={() => { navigate("/notifications"); setShowMenu(false); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", width: "100%", background: "none", border: "none", borderTop: "1px solid var(--border)", cursor: "pointer", fontSize: 13, color: "var(--text)" }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                    <span style={{ flex: 1, textAlign: "left" }}>Notifications</span>
+                    <Pill n={notifCount} />
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          /* ── Guest controls — Login + Sign up ─────────────────────────────── */
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button
+              onClick={() => navigate("/login")}
+              style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+            >
+              Log in
+            </button>
+            <button
+              onClick={() => navigate("/signup")}
+              style={{ background: "var(--accent)", border: "none", borderRadius: 8, padding: "5px 10px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+            >
+              Sign up
+            </button>
+          </div>
+        )}
       </nav>
 
       {showSwitcher && <CampusSwitcher onClose={() => setShowSwitcher(false)} />}

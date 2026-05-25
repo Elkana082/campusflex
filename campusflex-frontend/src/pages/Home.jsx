@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import StoryBar from "../components/StoryBar";
@@ -13,32 +14,33 @@ const buildPostsUrl = (campus) =>
 
 export default function Home() {
   const { currentCampus, isAdmin, user } = useAuth();
-  const [posts, setPosts]           = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [uploading, setUploading]   = useState(false);
-  const [showForm, setShowForm]     = useState(false);
-  const [form, setForm]             = useState({ caption: "", tags: "", mentions: "" });
+  const navigate = useNavigate();
+  const [posts, setPosts]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showForm, setShowForm]   = useState(false);
+  const [form, setForm]           = useState({ caption: "", tags: "", mentions: "" });
   const [mediaFiles, setMediaFiles] = useState([]);
   const [previews, setPreviews]     = useState([]);
 
   const campus = CAMPUSES.find((c) => c.id === currentCampus);
   const isHome = currentCampus === user?.campus;
 
+  // ── Fetch posts — works for guests AND logged-in users ──────────────────────
   const fetchPosts = useCallback(() => {
-    if (!user) return;
     setLoading(true);
     api.get(buildPostsUrl(currentCampus))
       .then((r) => setPosts(r.data))
       .catch(() => toast.error("Could not load posts"))
       .finally(() => setLoading(false));
-  }, [currentCampus, user]);
+  }, [currentCampus]);
 
   useEffect(() => { fetchPosts(); }, [fetchPosts]);
 
   const handleFilesChange = (e) => {
     const selected = Array.from(e.target.files);
     if (!selected.length) return;
-    if (selected.length > 4) { toast.error("Maximum 4 files per post"); return; }
+    if (selected.length > 4) { toast.error("Maximum 4 files"); return; }
     const videos = selected.filter((f) => f.type.startsWith("video"));
     if (videos.length > 1) { toast.error("Maximum 1 video per post."); return; }
     setMediaFiles(selected);
@@ -78,16 +80,34 @@ export default function Home() {
     <div style={{ paddingBottom: 16 }}>
       <StoryBar />
 
+      {/* Campus banner */}
       {campus && (
         <div style={{ background: campus.color + "14", borderBottom: `1px solid ${campus.color}28`, padding: "9px 14px", display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 18 }}>{campus.emoji}</span>
           <div style={{ flex: 1 }}>
             <div className="syne" style={{ fontWeight: 800, fontSize: 13, color: campus.color }}>{campus.short} Feed</div>
           </div>
-          {!isHome && <span style={{ background: campus.color + "22", color: campus.color, border: `1px solid ${campus.color}33`, borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>Visiting</span>}
+          {user && !isHome && (
+            <span style={{ background: campus.color + "22", color: campus.color, border: `1px solid ${campus.color}33`, borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>Visiting</span>
+          )}
         </div>
       )}
 
+      {/* Guest join banner — shown to non-logged-in users */}
+      {!user && (
+        <div style={{ margin: "12px 12px 0", background: "linear-gradient(135deg, var(--accent)18, var(--pink)18)", border: "1px solid var(--accent)33", borderRadius: 16, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div className="syne" style={{ fontWeight: 800, fontSize: 14, color: "var(--text)", marginBottom: 3 }}>Join CampusFlex 🔥</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Like, comment, submit fits and more</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button onClick={() => navigate("/login")} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "7px 12px", color: "var(--text)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Log in</button>
+            <button onClick={() => navigate("/signup")} style={{ background: "var(--accent)", border: "none", borderRadius: 10, padding: "7px 12px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Sign up</button>
+          </div>
+        </div>
+      )}
+
+      {/* Admin post form */}
       {isAdmin && isHome && (
         <div style={{ padding: "12px 12px 0" }}>
           <button onClick={() => setShowForm(!showForm)} style={{ width: "100%", background: showForm ? "var(--surface)" : "linear-gradient(135deg,var(--accent),var(--pink))", border: showForm ? "1.5px solid var(--border)" : "none", borderRadius: 14, padding: "12px", color: showForm ? "var(--muted)" : "#fff", cursor: "pointer", fontWeight: 800, fontSize: 14, fontFamily: "Syne" }}>
@@ -118,7 +138,6 @@ export default function Home() {
                   </div>
                 )}
               </label>
-
               <textarea className="input" placeholder="Caption (optional)" rows={2} value={form.caption} onChange={(e) => setForm({ ...form, caption: e.target.value })} style={{ resize: "none", marginBottom: 10, borderRadius: 12 }} />
               <input className="input" placeholder="#tags separated by commas" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} style={{ marginBottom: 10 }} />
               <input className="input" placeholder="@mentions separated by commas" value={form.mentions} onChange={(e) => setForm({ ...form, mentions: e.target.value })} style={{ marginBottom: 12 }} />
@@ -130,6 +149,7 @@ export default function Home() {
         </div>
       )}
 
+      {/* Feed */}
       <div style={{ padding: "12px 12px 0" }}>
         {loading ? (
           <div style={{ textAlign: "center", padding: "40px", color: "var(--muted)" }}>
@@ -139,7 +159,7 @@ export default function Home() {
           <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
             <div className="syne" style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>No posts yet</div>
-            <div style={{ fontSize: 13 }}>{isAdmin ? "Be the first to post!" : "Check back soon — your admin will post something!"}</div>
+            <div style={{ fontSize: 13 }}>{isAdmin ? "Be the first to post!" : "Check back soon!"}</div>
           </div>
         ) : (
           posts.map((p) => <PostCard key={p._id} post={p} onDelete={handleDelete} />)
