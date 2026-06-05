@@ -7,14 +7,18 @@ import api from "../api/axios";
 import toast from "react-hot-toast";
 
 // ── VideoPlayer ───────────────────────────────────────────────────────────────
-// • Attempts to autoplay WITH sound on scroll-in (works after first user tap)
-// • If browser blocks sound (fresh page load, no interaction yet) falls back
-//   to muted silently — user can tap 🔊 to unmute
-// • Always restarts from 0 each time it scrolls into view
+// • Fills 4/5 frame with objectFit:cover — no black bars, no side shifting
+// • Tries to autoplay WITH sound; falls back to muted only if browser blocks
+// • Tap anywhere on video to pause / resume
+// • Sound stays ON unless user explicitly mutes; never resets to muted on scroll
 function VideoPlayer({ src }) {
-  const videoRef          = useRef(null);
-  const [muted, setMuted] = useState(false); // optimistic: assume sound allowed
+  const videoRef            = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted,   setMuted  ] = useState(false);
+  const [showIcon, setShowIcon] = useState(false); // brief tap feedback icon
+  const iconTimer = useRef(null);
 
+  // ── Intersection observer — restart + play with sound on scroll-in ─────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -22,19 +26,24 @@ function VideoPlayer({ src }) {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-          video.currentTime = 0;
-          video.muted = false;   // ← try with sound first
+          video.currentTime = 0;          // always restart
+          video.muted       = false;      // try with sound
           setMuted(false);
 
-          video.play().catch(() => {
-            // Browser blocked autoplay with sound — fall back to muted
-            video.muted = true;
-            setMuted(true);
-            video.play().catch(() => {});
-          });
+          video.play()
+            .then(() => setPlaying(true))
+            .catch(() => {
+              // Browser blocked sound — fall back to muted autoplay
+              video.muted = true;
+              setMuted(true);
+              video.play()
+                .then(() => setPlaying(true))
+                .catch(() => {});
+            });
         } else {
           video.pause();
           video.currentTime = 0;
+          setPlaying(false);
         }
       },
       { threshold: 0.5 }
@@ -44,46 +53,112 @@ function VideoPlayer({ src }) {
     return () => observer.disconnect();
   }, [src]);
 
+  // Pause on unmount / route navigation
   useEffect(() => {
     const video = videoRef.current;
     return () => { if (video) { video.pause(); video.currentTime = 0; } };
   }, []);
 
+  // ── Tap = toggle play / pause ──────────────────────────────────────────────
+  const handleTap = (e) => {
+    e.stopPropagation();
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      video.play().then(() => setPlaying(true)).catch(() => {});
+    } else {
+      video.pause();
+      setPlaying(false);
+    }
+
+    // Flash the icon briefly
+    clearTimeout(iconTimer.current);
+    setShowIcon(true);
+    iconTimer.current = setTimeout(() => setShowIcon(false), 700);
+  };
+
+  // ── Mute toggle (bottom-right corner) ─────────────────────────────────────
   const toggleMute = (e) => {
     e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
     setMuted(video.muted);
-    if (!video.muted && video.paused) video.play().catch(() => {});
+    if (!video.muted && video.paused) {
+      video.play().then(() => setPlaying(true)).catch(() => {});
+    }
   };
 
   return (
-    // Wrapper fills the slide 100% — essential so video centres inside it
-    <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
+    <div
+      onClick={handleTap}
+      style={{ position: "relative", width: "100%", height: "100%", background: "#000", cursor: "pointer" }}
+    >
       <video
         ref={videoRef}
         src={src}
         playsInline
         loop={false}
+        // No `controls` — tap-to-pause handles interaction
         style={{
-          // ── KEY FIX: fill the container, then objectFit centres the frame ──
           width: "100%",
           height: "100%",
-          objectFit: "contain",   // full frame, symmetric letterbox
+          objectFit: "cover",   // fills the 4/5 frame — no black bars
           display: "block",
         }}
       />
-      {/* Mute toggle — bottom-right corner */}
+
+      {/* Tap feedback — play / pause icon flashes briefly */}
+      {showIcon && (
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "rgba(0,0,0,0.5)", borderRadius: "50%",
+            width: 56, height: 56,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            {playing
+              ? /* Pause icon */
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              : /* Play icon */
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
+            }
+          </div>
+        </div>
+      )}
+
+      {/* Paused overlay — big play button so user knows it's paused */}
+      {!playing && !showIcon && (
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          pointerEvents: "none",
+          background: "rgba(0,0,0,0.15)",
+        }}>
+          <div style={{
+            background: "rgba(0,0,0,0.55)", borderRadius: "50%",
+            width: 56, height: 56,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
+          </div>
+        </div>
+      )}
+
+      {/* Mute / unmute button — bottom right */}
       <button
         onClick={toggleMute}
         style={{
           position: "absolute", bottom: 10, right: 10,
           background: "rgba(0,0,0,0.55)", border: "none",
-          borderRadius: "50%", width: 34, height: 34,
+          borderRadius: "50%", width: 32, height: 32,
           color: "#fff", cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 15, zIndex: 5,
+          fontSize: 14, zIndex: 5,
         }}
       >
         {muted ? "🔇" : "🔊"}
@@ -111,6 +186,7 @@ function MediaCarousel({ mediaItems }) {
 
   return (
     <div style={{ position: "relative", background: "#000", overflow: "hidden" }}>
+      {/* Slide track */}
       <div
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
@@ -126,7 +202,9 @@ function MediaCarousel({ mediaItems }) {
             style={{
               minWidth: "100%",
               flexShrink: 0,
-              aspectRatio: "1 / 1",   // consistent square slide height
+              // ── 4:5 = Instagram portrait style ──────────────────────────────
+              // Shorter than 1:1, no black bars — objectFit:cover fills the frame
+              aspectRatio: "4 / 5",
               background: "#000",
               overflow: "hidden",
             }}
@@ -139,7 +217,7 @@ function MediaCarousel({ mediaItems }) {
                   style={{
                     width: "100%",
                     height: "100%",
-                    objectFit: "contain",   // full image, no crop
+                    objectFit: "cover",   // fills frame, slight edge crop — no black bars
                     display: "block",
                   }}
                 />
@@ -156,7 +234,7 @@ function MediaCarousel({ mediaItems }) {
         <button onClick={next} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
       )}
 
-      {/* Counter */}
+      {/* Position counter */}
       {mediaItems.length > 1 && (
         <div style={{ position: "absolute", top: 10, right: 12, background: "#00000077", borderRadius: 20, padding: "3px 9px", fontSize: 11, color: "#fff", fontWeight: 700, backdropFilter: "blur(4px)", zIndex: 2 }}>
           {current + 1}/{mediaItems.length}
@@ -186,7 +264,7 @@ function ShareModal({ post, author, onClose }) {
     { name: "Telegram",  bg: "#229ED9", icon: "https://cdn.cdnlogo.com/logos/t/71/telegram.svg",  action: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(post.caption || "CampusFlex")}`, "_blank") },
     { name: "Twitter/X", bg: "#000",    icon: "https://cdn.cdnlogo.com/logos/t/96/twitter-x.svg", action: () => window.open(`https://twitter.com/intent/tweet?text=${enc}`, "_blank") },
     { name: "Facebook",  bg: "#1877F2", icon: "https://cdn.cdnlogo.com/logos/f/83/facebook.svg",  action: () => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, "_blank") },
-    { name: "TikTok",    bg: "#010101", emoji: "🎵", action: () => { navigator.clipboard.writeText(url); toast.success("Link copied — paste into TikTok!"); onClose(); } },
+    { name: "TikTok",    bg: "#010101", emoji: "🎵", action: () => { navigator.clipboard.writeText(url); toast.success("Link copied!"); onClose(); } },
     { name: "Instagram", bg: "#C13584", emoji: "📸", action: () => { navigator.clipboard.writeText(text); toast.success("Caption copied!"); onClose(); } },
   ];
 
@@ -230,7 +308,7 @@ function ShareModal({ post, author, onClose }) {
   );
 }
 
-// ── Reusable login prompt helper ──────────────────────────────────────────────
+// ── Login prompt helper ───────────────────────────────────────────────────────
 const needsLogin = (navigate, action) => {
   toast(`Login to ${action}`, { icon: "🔒" });
   setTimeout(() => navigate("/login"), 800);
@@ -315,7 +393,11 @@ export default function PostCard({ post, onDelete }) {
             <div onClick={() => goTo(author.username)} style={{ width: 42, height: 42, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}>
               {!author.profilePicture && author.username?.[0]?.toUpperCase()}
             </div>
-            {author.verified && <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}><VerifiedBadge size={14} /></div>}
+            {author.verified && (
+              <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}>
+                <VerifiedBadge size={14} />
+              </div>
+            )}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
@@ -325,7 +407,9 @@ export default function PostCard({ post, onDelete }) {
                 <span style={{ background: "#ec489918", color: "var(--pink)", border: "1px solid #ec489933", borderRadius: 20, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>Admin</span>
               )}
             </div>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>{new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+            <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              {new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </span>
           </div>
           {isAdmin && (
             <button onClick={handleDelete} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6 }}>
@@ -348,22 +432,27 @@ export default function PostCard({ post, onDelete }) {
               </svg>
               {likeCount.toLocaleString()}
             </button>
+
             <button onClick={handleToggleComments} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: showComments ? "var(--accent)" : "var(--muted)", fontSize: 13, fontWeight: 700 }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showComments ? "var(--accent)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
               </svg>
               {loadingComments ? "..." : commentCount.toLocaleString()}
             </button>
+
             <div style={{ flex: 1 }} />
+
             <button onClick={() => setSaved(!saved)} style={{ background: "none", border: "none", cursor: "pointer" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "var(--gold)" : "none"} stroke={saved ? "var(--gold)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
               </svg>
             </button>
+
             <button onClick={() => setShowShare(true)} style={{ background: "none", border: "none", cursor: "pointer" }}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
             </button>
           </div>
@@ -374,13 +463,25 @@ export default function PostCard({ post, onDelete }) {
               <span style={{ color: "var(--subtext)" }}>{post.caption}</span>
             </p>
           )}
-          {post.tags?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>{post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}</div>}
-          {post.mentions?.length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{post.mentions.map((m) => <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>@{m}</span>)}</div>}
+          {post.tags?.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>
+              {post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}
+            </div>
+          )}
+          {post.mentions?.length > 0 && (
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {post.mentions.map((m) => (
+                <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>@{m}</span>
+              ))}
+            </div>
+          )}
 
-          {/* Comments section */}
+          {/* Comments */}
           {showComments && (
             <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-              {comments.length === 0 && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>No comments yet. Be the first!</div>}
+              {comments.length === 0 && (
+                <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>No comments yet. Be the first!</div>
+              )}
               {comments.map((cm) => {
                 const canDelete = cm.author?._id === user?._id || isAdmin;
                 return (
@@ -393,11 +494,14 @@ export default function PostCard({ post, onDelete }) {
                         <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 6, cursor: "pointer" }}>{cm.author?.username}</span>
                         <span style={{ color: "var(--subtext)" }}>{cm.text}</span>
                       </div>
-                      {canDelete && <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>}
+                      {canDelete && (
+                        <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>
+                      )}
                     </div>
                   </div>
                 );
               })}
+
               {/* Comment input */}
               <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
                 <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: user?.profilePicture ? `url(${user.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
@@ -418,6 +522,7 @@ export default function PostCard({ post, onDelete }) {
           )}
         </div>
       </div>
+
       {showShare && <ShareModal post={post} author={author} onClose={() => setShowShare(false)} />}
     </>
   );
