@@ -7,160 +7,111 @@ import api from "../api/axios";
 import toast from "react-hot-toast";
 
 // ── VideoPlayer ───────────────────────────────────────────────────────────────
-// • Fills 4/5 frame with objectFit:cover — no black bars, no side shifting
-// • Tries to autoplay WITH sound; falls back to muted only if browser blocks
-// • Tap anywhere on video to pause / resume
-// • Sound stays ON unless user explicitly mutes; never resets to muted on scroll
 function VideoPlayer({ src }) {
-  const videoRef            = useRef(null);
-  const [playing, setPlaying] = useState(false);
-  const [muted,   setMuted  ] = useState(false);
-  const [showIcon, setShowIcon] = useState(false); // brief tap feedback icon
-  const iconTimer = useRef(null);
+  const videoRef           = useRef(null);
+  const playPromiseRef     = useRef(null);
+  const [playing,  setPlaying ] = useState(false);
+  const [muted,    setMuted   ] = useState(false);
+  const [showIcon, setShowIcon] = useState(false);
+  const iconTimer              = useRef(null);
 
-  // ── Intersection observer — restart + play with sound on scroll-in ─────────
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
-          video.currentTime = 0;          // always restart
-          video.muted       = false;      // try with sound
-          setMuted(false);
+    const tryPlay = () => {
+      video.currentTime = 0;
+      video.muted = false;
+      setMuted(false);
 
-          video.play()
-            .then(() => setPlaying(true))
-            .catch(() => {
-              // Browser blocked sound — fall back to muted autoplay
-              video.muted = true;
-              setMuted(true);
-              video.play()
-                .then(() => setPlaying(true))
-                .catch(() => {});
-            });
-        } else {
-          video.pause();
-          video.currentTime = 0;
-          setPlaying(false);
-        }
-      },
-      { threshold: 0.5 }
+      const p = video.play();
+      playPromiseRef.current = p;
+      if (p !== undefined) {
+        p.then(() => { setPlaying(true); playPromiseRef.current = null; })
+         .catch(() => {
+           video.muted = true;
+           setMuted(true);
+           const p2 = video.play();
+           playPromiseRef.current = p2;
+           if (p2 !== undefined) {
+             p2.then(() => { setPlaying(true); playPromiseRef.current = null; })
+               .catch(() => { playPromiseRef.current = null; });
+           }
+         });
+      }
+    };
+
+    const tryPause = () => {
+      const pending = playPromiseRef.current;
+      const doPause = () => { video.pause(); video.currentTime = 0; setPlaying(false); playPromiseRef.current = null; };
+      pending ? pending.finally(doPause) : doPause();
+    };
+
+    // threshold [0, 0.5] — fires on BOTH entry (≥0.5) and exit (<0.5 / leaves viewport)
+    const observer = new IntersectionObserver(
+      ([entry]) => { entry.intersectionRatio >= 0.5 ? tryPlay() : tryPause(); },
+      { threshold: [0, 0.5] }
     );
 
     observer.observe(video);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); video.pause(); video.currentTime = 0; setPlaying(false); };
   }, [src]);
 
-  // Pause on unmount / route navigation
-  useEffect(() => {
-    const video = videoRef.current;
-    return () => { if (video) { video.pause(); video.currentTime = 0; } };
-  }, []);
-
-  // ── Tap = toggle play / pause ──────────────────────────────────────────────
   const handleTap = (e) => {
     e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
-
-    if (video.paused) {
-      video.play().then(() => setPlaying(true)).catch(() => {});
-    } else {
-      video.pause();
-      setPlaying(false);
-    }
-
-    // Flash the icon briefly
     clearTimeout(iconTimer.current);
     setShowIcon(true);
     iconTimer.current = setTimeout(() => setShowIcon(false), 700);
+    if (video.paused) {
+      const p = video.play();
+      if (p !== undefined) p.then(() => setPlaying(true)).catch(() => {});
+    } else { video.pause(); setPlaying(false); }
   };
 
-  // ── Mute toggle (bottom-right corner) ─────────────────────────────────────
   const toggleMute = (e) => {
     e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
     setMuted(video.muted);
-    if (!video.muted && video.paused) {
-      video.play().then(() => setPlaying(true)).catch(() => {});
-    }
+    if (!video.muted && video.paused) video.play().then(() => setPlaying(true)).catch(() => {});
   };
 
   return (
-    <div
-      onClick={handleTap}
-      style={{ position: "relative", width: "100%", height: "100%", background: "#000", cursor: "pointer" }}
-    >
+    <div onClick={handleTap} style={{ position: "relative", width: "100%", height: "100%", background: "#000", cursor: "pointer" }}>
       <video
         ref={videoRef}
         src={src}
         playsInline
         loop={false}
-        // No `controls` — tap-to-pause handles interaction
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",   // fills the 4/5 frame — no black bars
-          display: "block",
-        }}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
       />
 
-      {/* Tap feedback — play / pause icon flashes briefly */}
+      {/* Tap flash */}
       {showIcon && (
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          pointerEvents: "none",
-        }}>
-          <div style={{
-            background: "rgba(0,0,0,0.5)", borderRadius: "50%",
-            width: 56, height: 56,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+          <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
             {playing
-              ? /* Pause icon */
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-              : /* Play icon */
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
+              ? <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              : <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
             }
           </div>
         </div>
       )}
 
-      {/* Paused overlay — big play button so user knows it's paused */}
+      {/* Paused overlay */}
       {!playing && !showIcon && (
-        <div style={{
-          position: "absolute", inset: 0,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          pointerEvents: "none",
-          background: "rgba(0,0,0,0.15)",
-        }}>
-          <div style={{
-            background: "rgba(0,0,0,0.55)", borderRadius: "50%",
-            width: 56, height: 56,
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
+        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", background: "rgba(0,0,0,0.18)" }}>
+          <div style={{ background: "rgba(0,0,0,0.55)", borderRadius: "50%", width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><polygon points="5,3 19,12 5,21"/></svg>
           </div>
         </div>
       )}
 
-      {/* Mute / unmute button — bottom right */}
-      <button
-        onClick={toggleMute}
-        style={{
-          position: "absolute", bottom: 10, right: 10,
-          background: "rgba(0,0,0,0.55)", border: "none",
-          borderRadius: "50%", width: 32, height: 32,
-          color: "#fff", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 14, zIndex: 5,
-        }}
-      >
+      {/* Mute toggle */}
+      <button onClick={toggleMute} style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(0,0,0,0.55)", border: "none", borderRadius: "50%", width: 30, height: 30, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 5 }}>
         {muted ? "🔇" : "🔊"}
       </button>
     </div>
@@ -179,22 +130,16 @@ function MediaCarousel({ mediaItems }) {
   const onTouchEnd   = (e) => {
     if (startXRef.current === null) return;
     const diff = startXRef.current - e.changedTouches[0].clientX;
-    if (diff > 40)  next();
-    if (diff < -40) prev();
+    if (diff > 40) next(); if (diff < -40) prev();
     startXRef.current = null;
   };
 
   return (
     <div style={{ position: "relative", background: "#000", overflow: "hidden" }}>
-      {/* Slide track */}
       <div
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        style={{
-          display: "flex",
-          transform: `translateX(-${current * 100}%)`,
-          transition: "transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)",
-        }}
+        style={{ display: "flex", transform: `translateX(-${current * 100}%)`, transition: "transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)" }}
       >
         {mediaItems.map((item, i) => (
           <div
@@ -202,9 +147,9 @@ function MediaCarousel({ mediaItems }) {
             style={{
               minWidth: "100%",
               flexShrink: 0,
-              // ── 4:5 = Instagram portrait style ──────────────────────────────
-              // Shorter than 1:1, no black bars — objectFit:cover fills the frame
-              aspectRatio: "4 / 5",
+              // ── FIXED 300px height — same for every post, every screen ────
+              // objectFit:cover centres the media so nothing is pushed sideways
+              height: 300,
               background: "#000",
               overflow: "hidden",
             }}
@@ -214,38 +159,28 @@ function MediaCarousel({ mediaItems }) {
               : <img
                   src={item.url}
                   alt={`media-${i}`}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",   // fills frame, slight edge crop — no black bars
-                    display: "block",
-                  }}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
             }
           </div>
         ))}
       </div>
 
-      {/* Arrows */}
       {mediaItems.length > 1 && current > 0 && (
-        <button onClick={prev} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
+        <button onClick={prev} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 30, height: 30, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
       )}
       {mediaItems.length > 1 && current < mediaItems.length - 1 && (
-        <button onClick={next} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 32, height: 32, color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
+        <button onClick={next} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 30, height: 30, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>›</button>
       )}
-
-      {/* Position counter */}
       {mediaItems.length > 1 && (
-        <div style={{ position: "absolute", top: 10, right: 12, background: "#00000077", borderRadius: 20, padding: "3px 9px", fontSize: 11, color: "#fff", fontWeight: 700, backdropFilter: "blur(4px)", zIndex: 2 }}>
+        <div style={{ position: "absolute", top: 10, right: 12, background: "#00000077", borderRadius: 20, padding: "2px 8px", fontSize: 10, color: "#fff", fontWeight: 700, backdropFilter: "blur(4px)", zIndex: 2 }}>
           {current + 1}/{mediaItems.length}
         </div>
       )}
-
-      {/* Dot indicators */}
       {mediaItems.length > 1 && (
-        <div style={{ position: "absolute", bottom: 10, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 2 }}>
+        <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 5, zIndex: 2 }}>
           {mediaItems.map((_, i) => (
-            <div key={i} onClick={() => setCurrent(i)} style={{ width: i === current ? 16 : 6, height: 6, borderRadius: 3, background: i === current ? "#fff" : "#ffffff66", cursor: "pointer", transition: "width 0.2s" }} />
+            <div key={i} onClick={() => setCurrent(i)} style={{ width: i === current ? 14 : 5, height: 5, borderRadius: 3, background: i === current ? "#fff" : "#ffffff66", cursor: "pointer", transition: "width 0.2s" }} />
           ))}
         </div>
       )}
@@ -269,15 +204,13 @@ function ShareModal({ post, author, onClose }) {
   ];
 
   const handleSave = async () => {
-    const firstMedia = post.media?.[0] || { url: post.mediaUrl, type: post.mediaType };
+    const m = post.media?.[0] || { url: post.mediaUrl, type: post.mediaType };
     try {
-      const res  = await fetch(firstMedia.url);
-      const blob = await res.blob();
+      const blob = await (await fetch(m.url)).blob();
       const a    = document.createElement("a");
       a.href     = URL.createObjectURL(blob);
-      a.download = `campusflex-${post._id}.${firstMedia.type === "video" ? "mp4" : "jpg"}`;
-      a.click();
-      onClose();
+      a.download = `campusflex-${post._id}.${m.type === "video" ? "mp4" : "jpg"}`;
+      a.click(); onClose();
     } catch { toast.error("Download failed"); }
   };
 
@@ -291,16 +224,16 @@ function ShareModal({ post, author, onClose }) {
           {apps.map((app) => (
             <button key={app.name} onClick={app.action} style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 16, padding: "14px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 7 }}>
               {app.icon
-                ? <img src={app.icon} alt={app.name} style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 8 }} />
-                : <div style={{ width: 32, height: 32, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{app.emoji}</div>
+                ? <img src={app.icon} alt={app.name} style={{ width: 30, height: 30, objectFit: "contain", borderRadius: 8 }} />
+                : <div style={{ width: 30, height: 30, borderRadius: 8, background: app.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>{app.emoji}</div>
               }
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>{app.name}</span>
             </button>
           ))}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <button onClick={() => { navigator.clipboard.writeText(url); toast.success("Link copied!"); onClose(); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "11px 8px", color: "var(--muted)", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔗 Copy link</button>
-          <button onClick={handleSave} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "11px 8px", color: "var(--muted)", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>⬇️ Save</button>
+          <button onClick={() => { navigator.clipboard.writeText(url); toast.success("Link copied!"); onClose(); }} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 8px", color: "var(--muted)", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>🔗 Copy link</button>
+          <button onClick={handleSave} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "10px 8px", color: "var(--muted)", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>⬇️ Save</button>
         </div>
       </div>
     </div>,
@@ -308,7 +241,6 @@ function ShareModal({ post, author, onClose }) {
   );
 }
 
-// ── Login prompt helper ───────────────────────────────────────────────────────
 const needsLogin = (navigate, action) => {
   toast(`Login to ${action}`, { icon: "🔒" });
   setTimeout(() => navigate("/login"), 800);
@@ -345,11 +277,8 @@ export default function PostCard({ post, onDelete }) {
 
   const handleDelete = async () => {
     if (!window.confirm("Delete this post?")) return;
-    try {
-      await api.delete(`/posts/${post._id}`);
-      toast.success("Post deleted");
-      if (onDelete) onDelete(post._id);
-    } catch { toast.error("Could not delete"); }
+    try { await api.delete(`/posts/${post._id}`); toast.success("Post deleted"); if (onDelete) onDelete(post._id); }
+    catch { toast.error("Could not delete"); }
   };
 
   const handleToggleComments = async () => {
@@ -367,9 +296,7 @@ export default function PostCard({ post, onDelete }) {
     if (!commentText.trim()) return;
     try {
       const { data } = await api.post(`/posts/${post._id}/comments`, { text: commentText });
-      setComments((prev) => [data, ...prev]);
-      setCommentCount((c) => c + 1);
-      setCommentText("");
+      setComments((prev) => [data, ...prev]); setCommentCount((c) => c + 1); setCommentText("");
     } catch { toast.error("Could not post comment"); }
   };
 
@@ -385,35 +312,31 @@ export default function PostCard({ post, onDelete }) {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 18, overflow: "hidden" }}>
+      <div className="card" style={{ marginBottom: 14, overflow: "hidden" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 15px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px" }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
-            <div onClick={() => goTo(author.username)} style={{ width: 42, height: 42, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}>
+            <div onClick={() => goTo(author.username)} style={{ width: 40, height: 40, borderRadius: "50%", cursor: "pointer", background: author.profilePicture ? `url(${author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 800, color: "#7c3aed", fontFamily: "Syne" }}>
               {!author.profilePicture && author.username?.[0]?.toUpperCase()}
             </div>
-            {author.verified && (
-              <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}>
-                <VerifiedBadge size={14} />
-              </div>
-            )}
+            {author.verified && <div style={{ position: "absolute", bottom: -2, right: -2, border: "2px solid var(--bg)", borderRadius: "50%", lineHeight: 0 }}><VerifiedBadge size={13} /></div>}
           </div>
           <div style={{ flex: 1 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-              <span onClick={() => goTo(author.username)} className="syne" style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", cursor: "pointer" }}>{author.username}</span>
-              {author.verified && <VerifiedBadge size={14} />}
+              <span onClick={() => goTo(author.username)} className="syne" style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", cursor: "pointer" }}>{author.username}</span>
+              {author.verified && <VerifiedBadge size={13} />}
               {(author.role === "admin" || author.role === "superadmin") && (
-                <span style={{ background: "#ec489918", color: "var(--pink)", border: "1px solid #ec489933", borderRadius: 20, padding: "1px 8px", fontSize: 10, fontWeight: 700 }}>Admin</span>
+                <span style={{ background: "#ec489918", color: "var(--pink)", border: "1px solid #ec489933", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>Admin</span>
               )}
             </div>
-            <span style={{ fontSize: 11, color: "var(--muted)" }}>
+            <span style={{ fontSize: 10, color: "var(--muted)" }}>
               {new Date(post.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
           {isAdmin && (
-            <button onClick={handleDelete} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 6 }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round">
+            <button onClick={handleDelete} style={{ background: "transparent", border: "none", cursor: "pointer", padding: 5 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
               </svg>
             </button>
@@ -424,87 +347,65 @@ export default function PostCard({ post, onDelete }) {
         {mediaItems.length > 0 && <MediaCarousel mediaItems={mediaItems} />}
 
         {/* Actions */}
-        <div style={{ padding: "12px 15px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10 }}>
+        <div style={{ padding: "10px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 8 }}>
             <button onClick={handleLike} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: liked ? "var(--pink)" : "var(--muted)", fontSize: 13, fontWeight: 700 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill={liked ? "var(--pink)" : "none"} stroke={liked ? "var(--pink)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill={liked ? "var(--pink)" : "none"} stroke={liked ? "var(--pink)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
               </svg>
               {likeCount.toLocaleString()}
             </button>
-
             <button onClick={handleToggleComments} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: showComments ? "var(--accent)" : "var(--muted)", fontSize: 13, fontWeight: 700 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={showComments ? "var(--accent)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={showComments ? "var(--accent)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
               </svg>
               {loadingComments ? "..." : commentCount.toLocaleString()}
             </button>
-
             <div style={{ flex: 1 }} />
-
             <button onClick={() => setSaved(!saved)} style={{ background: "none", border: "none", cursor: "pointer" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill={saved ? "var(--gold)" : "none"} stroke={saved ? "var(--gold)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill={saved ? "var(--gold)" : "none"} stroke={saved ? "var(--gold)" : "var(--muted)"} strokeWidth="1.8" strokeLinecap="round">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
               </svg>
             </button>
-
             <button onClick={() => setShowShare(true)} style={{ background: "none", border: "none", cursor: "pointer" }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round">
                 <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
-                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
               </svg>
             </button>
           </div>
 
           {post.caption && (
-            <p style={{ fontSize: 13, lineHeight: 1.65, color: "var(--text)", marginBottom: 6 }}>
+            <p style={{ fontSize: 13, lineHeight: 1.6, color: "var(--text)", marginBottom: 5 }}>
               <span onClick={() => goTo(author.username)} style={{ fontWeight: 700, cursor: "pointer" }}>{author.username} </span>
               <span style={{ color: "var(--subtext)" }}>{post.caption}</span>
             </p>
           )}
-          {post.tags?.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 5 }}>
-              {post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 13, fontWeight: 600 }}>#{t}</span>)}
-            </div>
-          )}
-          {post.mentions?.length > 0 && (
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-              {post.mentions.map((m) => (
-                <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>@{m}</span>
-              ))}
-            </div>
-          )}
+          {post.tags?.length > 0 && <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 4 }}>{post.tags.map((t) => <span key={t} style={{ color: "var(--accent)", fontSize: 12, fontWeight: 600 }}>#{t}</span>)}</div>}
+          {post.mentions?.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{post.mentions.map((m) => <span key={m} onClick={() => goTo(m)} style={{ color: "var(--pink)", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>@{m}</span>)}</div>}
 
-          {/* Comments */}
           {showComments && (
-            <div style={{ marginTop: 12, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-              {comments.length === 0 && (
-                <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: "10px 0" }}>No comments yet. Be the first!</div>
-              )}
+            <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+              {comments.length === 0 && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12, padding: "8px 0" }}>No comments yet. Be the first!</div>}
               {comments.map((cm) => {
                 const canDelete = cm.author?._id === user?._id || isAdmin;
                 return (
-                  <div key={cm._id} style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "flex-start" }}>
-                    <div onClick={() => goTo(cm.author?.username)} style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, cursor: "pointer", background: cm.author?.profilePicture ? `url(${cm.author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
+                  <div key={cm._id} style={{ display: "flex", gap: 7, marginBottom: 8, alignItems: "flex-start" }}>
+                    <div onClick={() => goTo(cm.author?.username)} style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, cursor: "pointer", background: cm.author?.profilePicture ? `url(${cm.author.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#7c3aed" }}>
                       {!cm.author?.profilePicture && cm.author?.username?.[0]?.toUpperCase()}
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "8px 13px", fontSize: 13 }}>
-                        <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 6, cursor: "pointer" }}>{cm.author?.username}</span>
+                      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "7px 11px", fontSize: 12 }}>
+                        <span onClick={() => goTo(cm.author?.username)} style={{ fontWeight: 700, color: "var(--text)", marginRight: 5, cursor: "pointer" }}>{cm.author?.username}</span>
                         <span style={{ color: "var(--subtext)" }}>{cm.text}</span>
                       </div>
-                      {canDelete && (
-                        <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "#ef4444", marginTop: 3, marginLeft: 6, fontWeight: 600, padding: 0 }}>Delete</button>
-                      )}
+                      {canDelete && <button onClick={() => handleDeleteComment(cm._id, cm.author?._id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#ef4444", marginTop: 2, marginLeft: 5, fontWeight: 600, padding: 0 }}>Delete</button>}
                     </div>
                   </div>
                 );
               })}
-
-              {/* Comment input */}
-              <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                <div style={{ width: 30, height: 30, borderRadius: "50%", flexShrink: 0, background: user?.profilePicture ? `url(${user.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: "#7c3aed" }}>
+              <div style={{ display: "flex", gap: 7, marginTop: 7, alignItems: "center" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", flexShrink: 0, background: user?.profilePicture ? `url(${user.profilePicture}) center/cover` : "linear-gradient(135deg,#ede9fe,#dbeafe)", border: "2px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#7c3aed" }}>
                   {!user?.profilePicture && (user?.username?.[0]?.toUpperCase() || "?")}
                 </div>
                 <input
@@ -514,15 +415,14 @@ export default function PostCard({ post, onDelete }) {
                   placeholder={user ? "Add a comment..." : "Login to comment..."}
                   onClick={() => { if (!user) needsLogin(navigate, "comment"); }}
                   readOnly={!user}
-                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 20, padding: "8px 14px", color: "var(--text)", fontSize: 13, outline: "none", cursor: user ? "text" : "pointer" }}
+                  style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 18, padding: "7px 12px", color: "var(--text)", fontSize: 12, outline: "none", cursor: user ? "text" : "pointer" }}
                 />
-                <button onClick={submitComment} style={{ background: "var(--accent)", border: "none", borderRadius: 10, padding: "8px 14px", color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Post</button>
+                <button onClick={submitComment} style={{ background: "var(--accent)", border: "none", borderRadius: 9, padding: "7px 12px", color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>Post</button>
               </div>
             </div>
           )}
         </div>
       </div>
-
       {showShare && <ShareModal post={post} author={author} onClose={() => setShowShare(false)} />}
     </>
   );
