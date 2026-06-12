@@ -149,7 +149,7 @@ function MediaCarousel({ mediaItems }) {
               flexShrink: 0,
               // ── FIXED 300px height — same for every post, every screen ────
               // objectFit:cover centres the media so nothing is pushed sideways
-              height: 300,
+              height: 480,
               background: "#000",
               overflow: "hidden",
             }}
