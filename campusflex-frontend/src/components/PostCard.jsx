@@ -7,13 +7,22 @@ import api from "../api/axios";
 import toast from "react-hot-toast";
 
 // ── VideoPlayer ───────────────────────────────────────────────────────────────
-function VideoPlayer({ src }) {
-  const videoRef           = useRef(null);
-  const playPromiseRef     = useRef(null);
+// onDimensions(w, h) — called once metadata loads so the carousel can size itself
+function VideoPlayer({ src, onDimensions }) {
+  const videoRef        = useRef(null);
+  const playPromiseRef  = useRef(null);
   const [playing,  setPlaying ] = useState(false);
   const [muted,    setMuted   ] = useState(false);
   const [showIcon, setShowIcon] = useState(false);
   const iconTimer              = useRef(null);
+
+  // ── emit natural video dimensions once ready ────────────────────────────────
+  const handleMeta = (e) => {
+    const v = e.target;
+    if (onDimensions && v.videoWidth && v.videoHeight) {
+      onDimensions(v.videoWidth, v.videoHeight);
+    }
+  };
 
   useEffect(() => {
     const video = videoRef.current;
@@ -23,14 +32,12 @@ function VideoPlayer({ src }) {
       video.currentTime = 0;
       video.muted = false;
       setMuted(false);
-
       const p = video.play();
       playPromiseRef.current = p;
       if (p !== undefined) {
         p.then(() => { setPlaying(true); playPromiseRef.current = null; })
          .catch(() => {
-           video.muted = true;
-           setMuted(true);
+           video.muted = true; setMuted(true);
            const p2 = video.play();
            playPromiseRef.current = p2;
            if (p2 !== undefined) {
@@ -42,17 +49,15 @@ function VideoPlayer({ src }) {
     };
 
     const tryPause = () => {
-      const pending = playPromiseRef.current;
       const doPause = () => { video.pause(); video.currentTime = 0; setPlaying(false); playPromiseRef.current = null; };
+      const pending = playPromiseRef.current;
       pending ? pending.finally(doPause) : doPause();
     };
 
-    // threshold [0, 0.5] — fires on BOTH entry (≥0.5) and exit (<0.5 / leaves viewport)
     const observer = new IntersectionObserver(
       ([entry]) => { entry.intersectionRatio >= 0.5 ? tryPlay() : tryPause(); },
       { threshold: [0, 0.5] }
     );
-
     observer.observe(video);
     return () => { observer.disconnect(); video.pause(); video.currentTime = 0; setPlaying(false); };
   }, [src]);
@@ -86,10 +91,9 @@ function VideoPlayer({ src }) {
         src={src}
         playsInline
         loop={false}
+        onLoadedMetadata={handleMeta}
         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
       />
-
-      {/* Tap flash */}
       {showIcon && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
           <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -100,8 +104,6 @@ function VideoPlayer({ src }) {
           </div>
         </div>
       )}
-
-      {/* Paused overlay */}
       {!playing && !showIcon && (
         <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none", background: "rgba(0,0,0,0.18)" }}>
           <div style={{ background: "rgba(0,0,0,0.55)", borderRadius: "50%", width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -109,8 +111,6 @@ function VideoPlayer({ src }) {
           </div>
         </div>
       )}
-
-      {/* Mute toggle */}
       <button onClick={toggleMute} style={{ position: "absolute", bottom: 10, right: 10, background: "rgba(0,0,0,0.55)", border: "none", borderRadius: "50%", width: 30, height: 30, color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, zIndex: 5 }}>
         {muted ? "🔇" : "🔊"}
       </button>
@@ -119,9 +119,31 @@ function VideoPlayer({ src }) {
 }
 
 // ── MediaCarousel ─────────────────────────────────────────────────────────────
+// Dynamic height: measures the FIRST item's natural dimensions, calculates the
+// right container height (capped at 4:5 portrait like Instagram), then uses
+// that for every slide — so nothing is cropped and the card never goes full-screen.
 function MediaCarousel({ mediaItems }) {
-  const [current, setCurrent] = useState(0);
-  const startXRef             = useRef(null);
+  const [current,     setCurrent    ] = useState(0);
+  const [slideHeight, setSlideHeight] = useState(null); // null = loading
+  const wrapperRef                   = useRef(null);
+  const startXRef                    = useRef(null);
+
+  // ── Compute height from natural w/h of the first media item ────────────────
+  const computeHeight = useCallback((naturalW, naturalH) => {
+    if (slideHeight) return; // set only once
+    const containerW = wrapperRef.current?.offsetWidth || 390;
+    const ratio      = naturalH / naturalW;
+    // Instagram caps: 0.5625 (16:9 landscape) … 1.25 (4:5 portrait)
+    const capped = Math.min(Math.max(ratio, 0.5), 1.25);
+    setSlideHeight(Math.round(containerW * capped));
+  }, [slideHeight]);
+
+  const onImageLoad = (e) => {
+    const img = e.target;
+    computeHeight(img.naturalWidth, img.naturalHeight);
+  };
+
+  const onVideoDimensions = (w, h) => computeHeight(w, h);
 
   const next = useCallback(() => setCurrent((c) => Math.min(c + 1, mediaItems.length - 1)), [mediaItems.length]);
   const prev = useCallback(() => setCurrent((c) => Math.max(c - 1, 0)), []);
@@ -134,12 +156,20 @@ function MediaCarousel({ mediaItems }) {
     startXRef.current = null;
   };
 
+  // While waiting for first image to load, show a skeleton the same height as
+  // a square (containerWidth × 1) so the layout doesn't jump too much.
+  const h = slideHeight ?? (wrapperRef.current?.offsetWidth ?? 390);
+
   return (
-    <div style={{ position: "relative", background: "#000", overflow: "hidden" }}>
+    <div ref={wrapperRef} style={{ position: "relative", background: "#000", overflow: "hidden" }}>
       <div
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        style={{ display: "flex", transform: `translateX(-${current * 100}%)`, transition: "transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)" }}
+        style={{
+          display: "flex",
+          transform: `translateX(-${current * 100}%)`,
+          transition: "transform 0.3s cubic-bezier(0.25,0.46,0.45,0.94)",
+        }}
       >
         {mediaItems.map((item, i) => (
           <div
@@ -147,18 +177,20 @@ function MediaCarousel({ mediaItems }) {
             style={{
               minWidth: "100%",
               flexShrink: 0,
-              // ── FIXED 300px height — same for every post, every screen ────
-              // objectFit:cover centres the media so nothing is pushed sideways
-              height: 480,
+              height: h,          // ← dynamic, not fixed pixels
               background: "#000",
               overflow: "hidden",
             }}
           >
             {item.type === "video"
-              ? <VideoPlayer src={item.url} />
+              ? <VideoPlayer
+                  src={item.url}
+                  onDimensions={i === 0 ? onVideoDimensions : undefined}
+                />
               : <img
                   src={item.url}
                   alt={`media-${i}`}
+                  onLoad={i === 0 ? onImageLoad : undefined}
                   style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                 />
             }
@@ -166,6 +198,7 @@ function MediaCarousel({ mediaItems }) {
         ))}
       </div>
 
+      {/* Arrows */}
       {mediaItems.length > 1 && current > 0 && (
         <button onClick={prev} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", background: "#00000077", border: "none", borderRadius: "50%", width: 30, height: 30, color: "#fff", fontSize: 16, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 2 }}>‹</button>
       )}
@@ -207,8 +240,8 @@ function ShareModal({ post, author, onClose }) {
     const m = post.media?.[0] || { url: post.mediaUrl, type: post.mediaType };
     try {
       const blob = await (await fetch(m.url)).blob();
-      const a    = document.createElement("a");
-      a.href     = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
       a.download = `campusflex-${post._id}.${m.type === "video" ? "mp4" : "jpg"}`;
       a.click(); onClose();
     } catch { toast.error("Download failed"); }
