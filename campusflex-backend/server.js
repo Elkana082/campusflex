@@ -20,7 +20,10 @@ app.use(cors({
       origin === "http://localhost:5173"          ||
       origin === "http://localhost:3000"          ||
       origin.endsWith(".vercel.app")              ||   // ← covers ALL preview URLs
-      (process.env.FRONTEND_URL && origin === process.env.FRONTEND_URL);
+      [
+  process.env.FRONTEND_URL,
+  "https://campusflexy.onrender.com"
+].includes(origin)
 
     if (allowed) return callback(null, true);
     return callback(new Error(`CORS blocked: ${origin}`));
