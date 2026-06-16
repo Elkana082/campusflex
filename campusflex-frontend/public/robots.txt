@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://campusflexy.onrender.com/sitemap.xml
+Sitemap: https://campusflex-theta.vercel.app/sitemap.xml
